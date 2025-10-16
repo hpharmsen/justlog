@@ -1,4 +1,5 @@
 # log.py
+import json
 import logging
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
@@ -6,6 +7,37 @@ import sys
 from pathlib import Path
 from types import TracebackType
 from typing import Optional, Type
+
+
+class StructuredFormatter(logging.Formatter):
+    """Custom formatter that appends extra fields as formatted JSON."""
+
+    # Standard LogRecord attributes that should not be treated as 'extra'
+    RESERVED_ATTRS = {
+        'name', 'msg', 'args', 'created', 'filename', 'funcName', 'levelname',
+        'levelno', 'lineno', 'module', 'msecs', 'message', 'pathname', 'process',
+        'processName', 'relativeCreated', 'thread', 'threadName', 'exc_info',
+        'exc_text', 'stack_info', 'taskName', 'asctime',
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format log record with extra fields appended as JSON."""
+        # Get the base formatted message
+        base_message = super().format(record)
+
+        # Extract extra fields (anything not in RESERVED_ATTRS)
+        extra_fields = {
+            key: value
+            for key, value in record.__dict__.items()
+            if key not in self.RESERVED_ATTRS and not key.startswith('_')
+        }
+
+        # If there are extra fields, append them as formatted JSON
+        if extra_fields:
+            json_extra = json.dumps(extra_fields, indent=4, default=str)
+            return f'{base_message}\n{json_extra}'
+
+        return base_message
 
 
 class _LoggerProxy:
@@ -56,7 +88,7 @@ class _LoggerProxy:
         # Replace handlers idempotently
         logger.handlers.clear()
 
-        formatter = logging.Formatter(fmt=fmt, datefmt=datefmt)
+        formatter = StructuredFormatter(fmt=fmt, datefmt=datefmt)
 
         file_handler = RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backup_count)
         file_handler.setFormatter(formatter)
@@ -104,7 +136,7 @@ class _LoggerProxy:
         logger.setLevel(logging.WARNING)
         logger.propagate = False
         if not logger.handlers:
-            formatter = logging.Formatter(
+            formatter = StructuredFormatter(
                 fmt="%(asctime)s %(levelname)s %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
