@@ -73,8 +73,6 @@ class _LoggerProxy:
         # Make sure uncaught exceptions are logged
         sys.excepthook = self._handle_uncaught_exception
 
-        logger.debug("Logger configured", extra={"log_file": str(log_path)})
-
         self.backup_days = backup_days
         if self.backup_days:
             self.cleanup_old_logs()

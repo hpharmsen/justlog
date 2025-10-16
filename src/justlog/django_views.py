@@ -41,25 +41,25 @@ def log_viewer_view(request):
 
     min_level = level_map.get(level_name, logging.INFO)
 
-    # Read and filter log lines
-    log_lines = _read_and_filter_logs(lg.log_file_path, min_level)
+    # Read and filter log entries (each entry may be multi-line)
+    log_entries = _read_and_filter_logs(lg.log_file_path, min_level)
 
     # Reverse so newest logs are first
-    log_lines.reverse()
+    log_entries.reverse()
 
-    # Pagination
-    total_lines = len(log_lines)
-    total_pages = (total_lines + per_page - 1) // per_page
+    # Pagination by complete entries (never split an entry)
+    total_entries = len(log_entries)
+    total_pages = (total_entries + per_page - 1) // per_page
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
-    page_lines = log_lines[start_idx:end_idx]
+    page_entries = log_entries[start_idx:end_idx]
 
     # Build HTML response
     html = _build_html_response(
-        page_lines=page_lines,
+        page_entries=page_entries,
         page=page,
         total_pages=total_pages,
-        total_lines=total_lines,
+        total_entries=total_entries,
         level_name=level_name,
         per_page=per_page,
     )
@@ -67,11 +67,14 @@ def log_viewer_view(request):
     return HttpResponse(html)
 
 
-def _read_and_filter_logs(log_path: Path, min_level: int) -> List[str]:
+def _read_and_filter_logs(log_path: Path, min_level: int) -> List[List[str]]:
     """
     Reads log file and filters by minimum level.
-    Returns list of log lines that meet the level threshold.
+    Returns list of log entries (each entry is a list of lines).
+    Multi-line entries (like stack traces) are kept together.
     """
+    import re
+
     level_map = {
         'DEBUG': logging.DEBUG,
         'INFO': logging.INFO,
@@ -80,34 +83,53 @@ def _read_and_filter_logs(log_path: Path, min_level: int) -> List[str]:
         'CRITICAL': logging.CRITICAL,
     }
 
-    filtered_lines = []
+    # Pattern to match log entry start: date/time followed by log level
+    # Example: "2025-10-05 15:23:45 INFO message"
+    log_start_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}')
+
+    entries = []
+    current_entry = []
+    current_level = logging.NOTSET
 
     try:
         with open(log_path, 'r', encoding='utf-8') as f:
             for line in f:
-                # Parse log level from line
-                # Expected format: "2025-10-05 15:23:45 INFO message"
-                parts = line.strip().split()
-                if len(parts) >= 3:
-                    level_str = parts[2]
-                    line_level = level_map.get(level_str, logging.NOTSET)
+                # Check if this line starts a new log entry
+                if log_start_pattern.match(line):
+                    # Save previous entry if it meets the level threshold
+                    if current_entry and current_level >= min_level:
+                        entries.append(current_entry)
 
-                    if line_level >= min_level:
-                        filtered_lines.append(line)
+                    # Start new entry
+                    current_entry = [line]
+
+                    # Parse log level from line
+                    parts = line.strip().split()
+                    if len(parts) >= 3:
+                        level_str = parts[2]
+                        current_level = level_map.get(level_str, logging.NOTSET)
+                    else:
+                        current_level = logging.NOTSET
                 else:
-                    # Include lines that don't match format (e.g., multi-line)
-                    filtered_lines.append(line)
-    except Exception as e:
-        filtered_lines = [f'Error reading log file: {e}']
+                    # Continuation line (e.g., stack trace)
+                    if current_entry:
+                        current_entry.append(line)
 
-    return filtered_lines
+            # Don't forget the last entry
+            if current_entry and current_level >= min_level:
+                entries.append(current_entry)
+
+    except Exception as e:
+        entries = [[f'Error reading log file: {e}\n']]
+
+    return entries
 
 
 def _build_html_response(
-    page_lines: List[str],
+    page_entries: List[List[str]],
     page: int,
     total_pages: int,
-    total_lines: int,
+    total_entries: int,
     level_name: str,
     per_page: int,
 ) -> str:
@@ -125,23 +147,30 @@ def _build_html_response(
         'CRITICAL': '#6f42c1',
     }
 
-    # Build log lines HTML with syntax highlighting
-    log_html_lines = []
-    for line in page_lines:
-        line = escape(line.rstrip())
+    # Build log entries HTML with syntax highlighting
+    log_html_entries = []
+    for entry in page_entries:
+        entry_html_lines = []
+        for line in entry:
+            line = escape(line.rstrip())
 
-        # Apply color to log level
-        for level, color in level_colors.items():
-            if f' {level} ' in line:
-                line = line.replace(
-                    f' {level} ',
-                    f' <span style="color: {color}; font-weight: bold;">{level}</span> '
-                )
-                break
+            # Apply color to log level (only in first line)
+            for level, color in level_colors.items():
+                if f' {level} ' in line:
+                    line = line.replace(
+                        f' {level} ',
+                        f' <span style="color: {color}; font-weight: bold;">{level}</span> ',
+                        1  # Only replace first occurrence
+                    )
+                    break
 
-        log_html_lines.append(f'<div class="log-line">{line}</div>')
+            entry_html_lines.append(line)
 
-    log_content = '\n'.join(log_html_lines) if log_html_lines else '<p>No logs found.</p>'
+        # Wrap each complete entry in a div
+        entry_html = '<div class="log-entry">' + '<br>'.join(entry_html_lines) + '</div>'
+        log_html_entries.append(entry_html)
+
+    log_content = '\n'.join(log_html_entries) if log_html_entries else '<p>No logs found.</p>'
 
     # Build pagination controls
     prev_page = page - 1 if page > 1 else None
@@ -153,7 +182,7 @@ def _build_html_response(
     else:
         pagination_html += '<span class="disabled">« Previous</span> '
 
-    pagination_html += f'<span class="page-info">Page {page} of {total_pages} ({total_lines} logs)</span>'
+    pagination_html += f'<span class="page-info">Page {page} of {total_pages} ({total_entries} entries)</span>'
 
     if next_page:
         pagination_html += f' <a href="?level={level_name.lower()}&page={next_page}&per_page={per_page}">Next »</a>'
@@ -236,13 +265,18 @@ def _build_html_response(
             padding: 15px;
             overflow-x: auto;
         }}
-        .log-line {{
+        .log-entry {{
             line-height: 1.5;
-            padding: 2px 0;
+            padding: 8px 0;
             white-space: pre-wrap;
             word-wrap: break-word;
+            border-bottom: 1px solid #21262d;
+            margin-bottom: 5px;
         }}
-        .log-line:hover {{
+        .log-entry:last-child {{
+            border-bottom: none;
+        }}
+        .log-entry:hover {{
             background-color: #161b22;
         }}
     </style>
