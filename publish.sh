@@ -13,6 +13,6 @@ duration=$(($(date +%s) - start_time))
 echo "${GREEN}Published in $duration secs${NC}"
 echo ""
 echo "run:"
-#echo "pip install git+https://github.com/hpharmsen/justlog@$VERSION"
+echo "pip install git+https://github.com/hpharmsen/justlog@$VERSION"
 #echo "of:"
-echo "python -m pip install --upgrade pip; pip install justlog==$VERSION"
+#echo "python -m pip install --upgrade pip; pip install justlog==$VERSION"
