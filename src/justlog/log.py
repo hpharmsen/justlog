@@ -21,6 +21,7 @@ class _LoggerProxy:
 
     def __init__(self) -> None:
         self._logger: Optional[logging.Logger] = None
+        self.log_file_path: Optional[Path] = None
 
     # ---- Public API -----------------------------------------------------
 
@@ -44,6 +45,9 @@ class _LoggerProxy:
         log_path = Path(log_file_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.touch(exist_ok=True)
+
+        # Store for later access (e.g., Django view)
+        self.log_file_path = log_path
 
         logger = logging.getLogger(logger_name)
         logger.setLevel(level)

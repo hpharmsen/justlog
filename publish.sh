@@ -1,5 +1,5 @@
 start_time=$(date +%s)
-pip install --upgrade pip
+#pip install --upgrade pip
 #pip install twine build
 #/bin/rm -f dist/*
 export VERSION=`python bumpversion.py -v patch`
