@@ -3,3 +3,4 @@
 .idea
 /src/justlog.egg-info/
 /dist/
+/test_changes.py

@@ -6,38 +6,74 @@ from logging.handlers import RotatingFileHandler
 import sys
 from pathlib import Path
 from types import TracebackType
-from typing import Optional, Type
+from typing import Optional, Type, Any
+
+# Default format constants
+DEFAULT_DATEFMT = '%Y-%m-%d %H:%M:%S'
+DEFAULT_FMT = '%(asctime)s %(levelname)s %(message)s'
 
 
 class StructuredFormatter(logging.Formatter):
-    """Custom formatter that appends extra fields as formatted JSON."""
+    """Custom formatter that handles multiple arguments and keyword arguments."""
 
     # Standard LogRecord attributes that should not be treated as 'extra'
     RESERVED_ATTRS = {
         'name', 'msg', 'args', 'created', 'filename', 'funcName', 'levelname',
         'levelno', 'lineno', 'module', 'msecs', 'message', 'pathname', 'process',
         'processName', 'relativeCreated', 'thread', 'threadName', 'exc_info',
-        'exc_text', 'stack_info', 'taskName', 'asctime',
+        'exc_text', 'stack_info', 'taskName', 'asctime', '_extra_args', '_extra_kwargs',
     }
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format log record with extra fields appended as JSON."""
-        # Get the base formatted message
+        """Format log record with additional arguments shown below the main message."""
+        # Get the base formatted message (timestamp + level + first message)
         base_message = super().format(record)
 
-        # Extract extra fields (anything not in RESERVED_ATTRS)
-        extra_fields = {
-            key: value
-            for key, value in record.__dict__.items()
-            if key not in self.RESERVED_ATTRS and not key.startswith('_')
-        }
+        lines = [base_message]
 
-        # If there are extra fields, append them as formatted JSON
-        if extra_fields:
-            json_extra = json.dumps(extra_fields, indent=4, default=str)
-            return f'{base_message}\n{json_extra}'
+        # Handle extra positional arguments (after the first message)
+        if hasattr(record, '_extra_args') and record._extra_args:
+            for arg in record._extra_args:
+                formatted = self._format_value(arg)
+                lines.append(formatted)
 
-        return base_message
+        # Handle keyword arguments with their names
+        if hasattr(record, '_extra_kwargs') and record._extra_kwargs:
+            for key, value in record._extra_kwargs.items():
+                # Check if value is a JSON dict/list
+                is_json = ((value.startswith('{') and value.endswith('}')) or
+                          (value.startswith('[') and value.endswith(']')))
+
+                if is_json:
+                    # Multi-line formatting for dicts/lists
+                    formatted = self._format_value(value, indent=2)
+                    lines.append(f'  {key}:')
+                    lines.append(formatted)
+                else:
+                    # Single-line formatting for simple values
+                    lines.append(f'  {key}: {value}')
+
+        return '\n'.join(lines)
+
+    def _format_value(self, value: str, indent: int = 2) -> str:
+        """Format a value, pretty-printing dicts and lists as JSON."""
+        # Try to parse as JSON and pretty-print
+        try:
+            if (value.startswith('{') and value.endswith('}')) or \
+               (value.startswith('[') and value.endswith(']')):
+                # Parse JSON and pretty-print
+                parsed = json.loads(value)
+                if isinstance(parsed, (dict, list)):
+                    # Pretty-print with indentation
+                    json_str = json.dumps(parsed, indent=2, default=str)
+                    # Add indentation to each line
+                    indented = '\n'.join(' ' * indent + line for line in json_str.split('\n'))
+                    return indented
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Default: just indent the string
+        return ' ' * indent + value
 
 
 class _LoggerProxy:
@@ -66,8 +102,6 @@ class _LoggerProxy:
         backup_count: int = 5,      # Max number of old log files to keep .1 .2 .3 etc.
         backup_days: int = 0,       # Max number of days of old log files to keep. 0 is infinite
         logger_name: str = "app",
-        datefmt: str = "%Y-%m-%d %H:%M:%S",
-        fmt: str = "%(asctime)s %(levelname)s %(message)s",
     ) -> logging.Logger:
         """
         Configure logging and bind the underlying logger to this proxy.
@@ -88,7 +122,7 @@ class _LoggerProxy:
         # Replace handlers idempotently
         logger.handlers.clear()
 
-        formatter = StructuredFormatter(fmt=fmt, datefmt=datefmt)
+        formatter = StructuredFormatter(fmt=DEFAULT_FMT, datefmt=DEFAULT_DATEFMT)
 
         file_handler = RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backup_count)
         file_handler.setFormatter(formatter)
@@ -112,9 +146,67 @@ class _LoggerProxy:
 
     # ---- Logger-like delegation ----------------------------------------
 
+    def _log(self, log_level: int, *args: Any, **kwargs: Any) -> None:
+        """Internal method to log with multiple arguments."""
+        logger = self._ensure_logger()
+        if not args:
+            return
+
+        # First argument is the main message
+        message = str(args[0])
+
+        # Create the log record
+        record = logger.makeRecord(
+            logger.name,
+            log_level,
+            '(unknown file)',
+            0,
+            message,
+            (),
+            None,
+        )
+
+        # Attach extra args and kwargs to the record, preserving dicts/lists
+        if len(args) > 1:
+            record._extra_args = []
+            for arg in args[1:]:
+                if isinstance(arg, (dict, list)):
+                    record._extra_args.append(json.dumps(arg, default=str))
+                else:
+                    record._extra_args.append(str(arg))
+        if kwargs:
+            record._extra_kwargs = {}
+            for k, v in kwargs.items():
+                if isinstance(v, (dict, list)):
+                    record._extra_kwargs[k] = json.dumps(v, default=str)
+                else:
+                    record._extra_kwargs[k] = str(v)
+
+        logger.handle(record)
+
+    def debug(self, *args: Any, **kwargs: Any) -> None:
+        """Log a debug message with optional additional arguments."""
+        self._log(logging.DEBUG, *args, **kwargs)
+
+    def info(self, *args: Any, **kwargs: Any) -> None:
+        """Log an info message with optional additional arguments."""
+        self._log(logging.INFO, *args, **kwargs)
+
+    def warning(self, *args: Any, **kwargs: Any) -> None:
+        """Log a warning message with optional additional arguments."""
+        self._log(logging.WARNING, *args, **kwargs)
+
+    def error(self, *args: Any, **kwargs: Any) -> None:
+        """Log an error message with optional additional arguments."""
+        self._log(logging.ERROR, *args, **kwargs)
+
+    def critical(self, *args: Any, **kwargs: Any) -> None:
+        """Log a critical message with optional additional arguments."""
+        self._log(logging.CRITICAL, *args, **kwargs)
+
     def __getattr__(self, name: str):
         """
-        Delegate attribute access (info, debug, warning, error, critical, etc.)
+        Delegate attribute access for other logger methods (like exception, etc.)
         to the underlying logging.Logger. If not configured yet, bootstrap a
         minimal stderr logger so calls won't crash.
         """
@@ -136,10 +228,7 @@ class _LoggerProxy:
         logger.setLevel(logging.WARNING)
         logger.propagate = False
         if not logger.handlers:
-            formatter = StructuredFormatter(
-                fmt="%(asctime)s %(levelname)s %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
+            formatter = StructuredFormatter(fmt=DEFAULT_FMT, datefmt=DEFAULT_DATEFMT)
             sh = logging.StreamHandler(sys.stderr)
             sh.setFormatter(formatter)
             logger.addHandler(sh)
