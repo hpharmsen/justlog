@@ -13,12 +13,10 @@ def setup_django():
         from django.conf import settings
     except ImportError:
         # Django not installed, skip setup
-        print('NO DJANGO INSTALATION')
         return
 
     if not settings.configured:
         # Django not properly configured, skip setup
-        print('NO DJANGO SETTINGS')
         return
 
     try:
@@ -32,7 +30,6 @@ def setup_django():
 
         # Add our URL pattern to urlpatterns
         if hasattr(urlconf, 'urlpatterns'):
-            print('PATTERNS FOUND')
             # Check if /lg is already registered
             existing_patterns = [str(p.pattern) for p in urlconf.urlpatterns]
             if 'lg/' not in existing_patterns and 'lg' not in existing_patterns:
