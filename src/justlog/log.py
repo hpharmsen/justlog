@@ -142,6 +142,15 @@ class _LoggerProxy:
         self.backup_days = backup_days
         if self.backup_days:
             self.cleanup_old_logs()
+
+        try:
+            from .django_integration import setup_django
+
+            setup_django()
+        except ImportError:
+            pass  # django_integration module not available
+
+
         return logger
 
     # ---- Logger-like delegation ----------------------------------------

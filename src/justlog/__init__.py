@@ -1,7 +1,8 @@
 """JustLog - A simple, flexible logging utility for Python applications."""
 
+from importlib.metadata import version, PackageNotFoundError
+
 from .log import lg, _LoggerProxy
-from .django_integration import setup_django
 
 # Export the main interface
 __all__ = ['lg', 'setup_logging']
@@ -19,7 +20,10 @@ def setup_logging(*args, **kwargs):
     See lg.setup_logging for full parameter documentation.
     """
     result = lg.setup_logging(*args, **kwargs)
-    setup_django()
     return result
 
-__version__ = '0.1.0'
+try:
+    __version__ = version('justlog')
+except PackageNotFoundError:
+    # Package not installed yet (development mode)
+    __version__ = '0.0.0-dev'
