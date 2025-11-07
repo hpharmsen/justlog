@@ -52,18 +52,15 @@ def setup_django():
 
     try:
         # Add justlog to INSTALLED_APPS if not already present
-        # This allows our AppConfig.ready() to run if apps haven't been populated yet
-        if 'justlog' not in settings.INSTALLED_APPS:
-            settings.INSTALLED_APPS = list(settings.INSTALLED_APPS) + ['justlog']
+        if "justlog" not in settings.INSTALLED_APPS:
+            settings.INSTALLED_APPS = list(settings.INSTALLED_APPS) + ["justlog"]
 
-        # Always inject URLs directly as a safety measure
-        # This handles all timing scenarios:
-        # - Called early: AppConfig.ready() will also inject (safe, idempotent)
-        # - Called late: Direct injection ensures /lg/ works
-        # - Called during ready(): Ensures /lg/ works even if AppConfig wasn't loaded
-        inject_urls()
+        # Only inject URLs if apps are fully loaded
+        # Check both apps.ready and apps.app_configs to ensure full initialization
+        if apps.ready and apps.app_configs:
+            inject_urls()
+        # Otherwise, AppConfig.ready() will inject URLs later when apps are ready
 
     except Exception as e:
-        # If something goes wrong, log but don't crash
-        logger = logging.getLogger('justlog')
-        logger.warning(f'Failed to setup Django integration: {e}')
+        logger = logging.getLogger("justlog")
+        logger.warning(f"Failed to setup Django integration: {e}")
