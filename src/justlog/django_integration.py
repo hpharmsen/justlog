@@ -50,10 +50,6 @@ def setup_django():
         # Django not installed, skip setup
         return
 
-    if not settings.configured:
-        # Django not properly configured, skip setup
-        return
-
     try:
         # Add justlog to INSTALLED_APPS if not already present
         # This allows our AppConfig.ready() to run if apps haven't been populated yet
