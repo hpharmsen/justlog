@@ -9,8 +9,14 @@ __all__ = ['lg', 'setup_logging']
 # Convenience function that delegates to lg.setup_logging and sets up Django integration
 def setup_logging(*args, **kwargs):
     """
-    Configure logging and Django integration.
-    See lg.setup_logging for full documentation.
+    Configure logging with automatic Django integration.
+
+    In Django projects, this automatically:
+    - Sets up the logging system
+    - Adds justlog to INSTALLED_APPS
+    - Injects the /lg/ URL endpoint for viewing logs in the browser
+
+    See lg.setup_logging for full parameter documentation.
     """
     result = lg.setup_logging(*args, **kwargs)
     setup_django()

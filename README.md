@@ -107,7 +107,28 @@ setup_logging(
 
 ## Django Integration
 
-In Django, configure justlog in your app's `AppConfig.ready()` method:
+JustLog automatically integrates with Django when you call `setup_logging()`. The `/lg/` endpoint for viewing logs is automatically configured.
+
+### Basic Setup
+
+Simply call `setup_logging()` in your `settings.py` or in an app's `AppConfig.ready()` method:
+
+```python
+# settings.py
+import logging
+from pathlib import Path
+from justlog import setup_logging
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+setup_logging(
+    log_file_path=BASE_DIR / 'logs' / 'django.log',
+    level=logging.DEBUG,
+    to_stderr_level=logging.ERROR
+)
+```
+
+Or in an AppConfig for better organization:
 
 ```python
 # myapp/apps.py
@@ -131,14 +152,15 @@ class MyAppConfig(AppConfig):
         )
 ```
 
-Then update `settings.py`:
+### Viewing Logs
 
-```python
-INSTALLED_APPS = [
-    # ...
-    'myapp.apps.MyAppConfig',  # Use AppConfig instead of 'myapp'
-]
-```
+After setup, visit `http://localhost:8000/lg/` in your browser to view logs with:
+- Real-time log viewing with syntax highlighting
+- Filtering by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- Pagination for large log files
+- Dark mode UI optimized for readability
+
+The `/lg/` endpoint is automatically injected into your URLconf - no manual URL configuration needed.
 
 ## License
 
