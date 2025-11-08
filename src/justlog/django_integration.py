@@ -1,23 +1,43 @@
 # django_integration.py
+"""
+Django integration for JustLog.
+
+To use JustLog with Django:
+1. Add 'justlog.apps.JustLogConfig' to your INSTALLED_APPS in settings.py
+2. Call setup_logging() in your settings.py after INSTALLED_APPS
+3. The /lg/ endpoint will be automatically available for viewing logs
+
+Example:
+    # settings.py
+    INSTALLED_APPS = [
+        'django.contrib.admin',
+        ...
+        'justlog.apps.JustLogConfig',
+    ]
+
+    from justlog import setup_logging
+    setup_logging('logs/django.log')
+"""
 import logging
 
 
 def inject_urls():
     """
     Injects /lg URL pattern into Django's URLconf.
+
     Called by AppConfig.ready() when Django is fully initialized.
+    This function is idempotent and safe to call multiple times.
     """
     try:
         from django.conf import settings
         from django.urls import path, clear_url_caches
         from .django_views import log_viewer_view
 
-        # Get the root URLconf
+        # Get the root URLconf module
         urlconf = __import__(settings.ROOT_URLCONF, {}, {}, [''])
 
-        # Add our URL pattern to urlpatterns
+        # Add our URL pattern to urlpatterns if not already present
         if hasattr(urlconf, 'urlpatterns'):
-            # Check if /lg is already registered
             existing_patterns = [str(p.pattern) for p in urlconf.urlpatterns]
             if 'lg/' not in existing_patterns and 'lg' not in existing_patterns:
                 new_pattern = path('lg/', log_viewer_view, name='justlog_viewer')
@@ -32,35 +52,22 @@ def inject_urls():
 
 def setup_django():
     """
-    Automatically configures Django integration when setup_logging() is called.
+    Checks if Django is available and attempts to inject the /lg/ endpoint.
 
-    This function:
-    1. Detects if Django is available and configured
-    2. Adds 'justlog' to INSTALLED_APPS if not already present
-    3. Directly injects URLs to ensure /lg/ endpoint is always available
-
-    The URL injection is idempotent and safe to call multiple times.
-    If called early (before apps populate), AppConfig.ready() will also inject URLs.
-    If called late (during/after apps populate), direct injection ensures /lg/ works.
+    Note: This function requires that 'justlog.apps.JustLogConfig' is added to
+    INSTALLED_APPS before setup_logging() is called. If the app is not in
+    INSTALLED_APPS, URL injection may fail silently.
     """
     try:
         from django.conf import settings
-        from django.apps import apps
     except ImportError:
         # Django not installed, skip setup
         return
 
+    # Injection will succeed if called after apps are loaded (via AppConfig.ready)
+    # If called too early (during settings import), it will be retried by AppConfig
     try:
-        # Add justlog to INSTALLED_APPS if not already present
-        if "justlog" not in settings.INSTALLED_APPS:
-            settings.INSTALLED_APPS = list(settings.INSTALLED_APPS) + ["justlog"]
-
-        # Only inject URLs if apps are fully loaded
-        # Check both apps.ready and apps.app_configs to ensure full initialization
-        if apps.ready and apps.app_configs:
-            inject_urls()
-        # Otherwise, AppConfig.ready() will inject URLs later when apps are ready
-
+        inject_urls()
     except Exception as e:
-        logger = logging.getLogger("justlog")
-        logger.warning(f"Failed to setup Django integration: {e}")
+        # Silently ignore - AppConfig.ready() will retry if needed
+        pass

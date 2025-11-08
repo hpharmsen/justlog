@@ -1,0 +1,10 @@
+2025-11-07 19:31:53 INFO Test info message
+2025-11-07 19:31:53 WARNING Test warning message
+2025-11-07 19:31:53 ERROR Test error message
+2025-11-07 19:31:53 DEBUG Test debug message - should not appear with default settings
+2025-11-07 19:31:53 INFO Another info message with details
+  extra_data:
+  {
+    "user": "test",
+    "action": "login"
+  }

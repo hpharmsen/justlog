@@ -12,10 +12,20 @@ def setup_logging(*args, **kwargs):
     """
     Configure logging with automatic Django integration.
 
-    In Django projects, this automatically:
-    - Sets up the logging system
-    - Adds justlog to INSTALLED_APPS
-    - Injects the /lg/ URL endpoint for viewing logs in the browser
+    For Django projects:
+    1. Add 'justlog.apps.JustLogConfig' to INSTALLED_APPS in settings.py
+    2. Call setup_logging() after INSTALLED_APPS is defined
+    3. The /lg/ URL endpoint will be automatically injected for viewing logs
+
+    Example (Django settings.py):
+        INSTALLED_APPS = [
+            'django.contrib.admin',
+            ...
+            'justlog.apps.JustLogConfig',
+        ]
+
+        from justlog import setup_logging
+        setup_logging('logs/django.log')
 
     See lg.setup_logging for full parameter documentation.
     """
