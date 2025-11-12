@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 import sys
+import traceback
 from pathlib import Path
 from types import TracebackType
 from typing import Optional, Type, Any
@@ -186,7 +187,9 @@ class _LoggerProxy:
         if kwargs:
             record._extra_kwargs = {}
             for k, v in kwargs.items():
-                if isinstance(v, (dict, list)):
+                if k == 'exc_info' and v:
+                    record._extra_kwargs[k] = traceback.format_exc()
+                elif isinstance(v, (dict, list)):
                     record._extra_kwargs[k] = json.dumps(v, default=str)
                 else:
                     record._extra_kwargs[k] = str(v)
