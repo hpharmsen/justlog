@@ -123,7 +123,19 @@ INSTALLED_APPS = [
 ]
 ```
 
-**Step 2:** Configure logging in `settings.py`:
+**Step 2:** Add `justlog.middleware.JustLogMiddleware` to your `MIDDLEWARE` in `settings.py`:
+
+```python
+# settings.py
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    # ... other middleware ...
+    'justlog.middleware.JustLogMiddleware',  # Add this
+]
+```
+
+**Step 3:** Configure logging in `settings.py`:
 
 ```python
 # settings.py
@@ -140,7 +152,7 @@ setup_logging(
 )
 ```
 
-That's it! The `/lg/` endpoint is automatically configured.
+That's it! The `/lg/` endpoint will be available via the middleware.
 
 ### Using JustLog in Your Django Code
 
@@ -162,7 +174,7 @@ Visit `http://localhost:8000/lg/` in your browser to view logs with:
 - Pagination for large log files
 - Dark mode UI optimized for readability
 
-The `/lg/` endpoint is automatically injected into your URLconf - no manual URL configuration needed.
+The `/lg/` endpoint is handled by middleware - no manual URL configuration needed.
 
 ## License
 

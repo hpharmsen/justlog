@@ -14,14 +14,21 @@ def setup_logging(*args, **kwargs):
 
     For Django projects:
     1. Add 'justlog.apps.JustLogConfig' to INSTALLED_APPS in settings.py
-    2. Call setup_logging() after INSTALLED_APPS is defined
-    3. The /lg/ URL endpoint will be automatically injected for viewing logs
+    2. Add 'justlog.middleware.JustLogMiddleware' to MIDDLEWARE in settings.py
+    3. Call setup_logging() after INSTALLED_APPS is defined
+    4. The /lg/ URL endpoint will be available for viewing logs via the middleware
 
     Example (Django settings.py):
         INSTALLED_APPS = [
             'django.contrib.admin',
             ...
             'justlog.apps.JustLogConfig',
+        ]
+
+        MIDDLEWARE = [
+            'django.middleware.security.SecurityMiddleware',
+            ...
+            'justlog.middleware.JustLogMiddleware',
         ]
 
         from justlog import setup_logging
