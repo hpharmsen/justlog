@@ -8,6 +8,7 @@ import traceback
 from pathlib import Path
 from types import TracebackType
 from typing import Optional, Type, Any
+from zoneinfo import ZoneInfo
 
 # Default format constants
 DEFAULT_DATEFMT = '%Y-%m-%d %H:%M:%S'
@@ -24,6 +25,14 @@ class StructuredFormatter(logging.Formatter):
         'processName', 'relativeCreated', 'thread', 'threadName', 'exc_info',
         'exc_text', 'stack_info', 'taskName', 'asctime', '_extra_args', '_extra_kwargs',
     }
+
+    def formatTime(self, record: logging.LogRecord, datefmt: Optional[str] = None) -> str:
+        """Convert timestamp to CET timezone."""
+        # Convert the record's timestamp (in UTC) to CET
+        ct = datetime.fromtimestamp(record.created, tz=ZoneInfo('Europe/Amsterdam'))
+        if datefmt:
+            return ct.strftime(datefmt)
+        return ct.strftime(DEFAULT_DATEFMT)
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record with additional arguments shown below the main message."""
