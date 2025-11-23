@@ -95,15 +95,19 @@ setup_logging(
 | `backup_count` | `int` | `5` | Number of backup files to keep |
 | `backup_days` | `int` | `0` | Days to keep (0 = infinite) |
 | `logger_name` | `str` | `"app"` | Internal logger name |
+| `use_database` | `bool` | `False` | Enable database logging (requires Django) |
+| `db_level` | `int` | `logging.INFO` | Minimum level for database logging |
 
 ## Features
 
 - **Singleton pattern**: Use `lg` anywhere after initial setup
 - **File rotation**: Automatic rotation when size limit is reached
 - **Dual output**: Log to file and stderr with separate levels
+- **Database storage**: Optional database logging via Django ORM
 - **Auto-cleanup**: Time-based cleanup of old entries
 - **Exception handling**: Uncaught exceptions are automatically logged
 - **Multi-argument support**: Pass any printable arguments
+- **Structured logging**: Preserves extra arguments as JSON in database
 
 ## Django Integration
 
@@ -152,6 +156,25 @@ setup_logging(
 )
 ```
 
+**Step 4 (Optional):** Enable database logging and run migrations:
+
+```python
+# settings.py - Update setup_logging call to enable database logging
+setup_logging(
+    log_file_path=BASE_DIR / 'logs' / 'django.log',
+    level=logging.DEBUG,
+    to_stderr_level=logging.ERROR,
+    use_database=True,      # Enable database logging
+    db_level=logging.INFO   # Store INFO and above in database
+)
+```
+
+Then run migrations to create the database table:
+
+```bash
+python manage.py migrate
+```
+
 That's it! The `/lg/` endpoint will be available via the middleware.
 
 ### Using JustLog in Your Django Code
@@ -173,8 +196,35 @@ Visit `http://localhost:8000/lg/` in your browser to view logs with:
 - Filtering by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 - Pagination for large log files
 - Dark mode UI optimized for readability
+- **Source selector**: Toggle between file-based and database logs (when `use_database=True`)
 
 The `/lg/` endpoint is handled by middleware - no manual URL configuration needed.
+
+### Database Logging Benefits
+
+When `use_database=True`, logs are stored in both the file and database:
+
+- **Queryable logs**: Use Django ORM to query logs programmatically
+- **Structured data**: Extra arguments preserved as JSON fields
+- **Better filtering**: Fast indexed queries by timestamp and level
+- **Any database**: Works with PostgreSQL, MySQL, SQLite, etc.
+- **Dual storage**: File logs remain available for backup/debugging
+
+```python
+# Query logs programmatically
+from justlog.models import LogEntry
+
+# Get recent errors
+recent_errors = LogEntry.objects.filter(level__gte=40).order_by('-timestamp')[:10]
+
+# Search by message content
+payment_logs = LogEntry.objects.filter(message__icontains='payment')
+
+# Get logs from specific time range
+from datetime import datetime, timedelta
+yesterday = datetime.now() - timedelta(days=1)
+recent_logs = LogEntry.objects.filter(timestamp__gte=yesterday)
+```
 
 ## License
 

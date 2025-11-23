@@ -112,10 +112,30 @@ class _LoggerProxy:
         backup_count: int = 5,      # Max number of old log files to keep .1 .2 .3 etc.
         backup_days: int = 0,       # Max number of days of old log files to keep. 0 is infinite
         logger_name: str = "app",
+        use_database: bool = False, # Enable database logging (requires Django)
+        db_level: int = logging.INFO,  # Minimum level for database logging
     ) -> logging.Logger:
         """
         Configure logging and bind the underlying logger to this proxy.
         Safe to call more than once; it replaces previous handlers.
+
+        Args:
+            log_file_path: Path to the log file (required)
+            level: Minimum log level for file logging (default: logging.INFO)
+            to_stderr_level: Minimum level for stderr output (default: logging.NOTSET, 0 = disabled)
+            max_bytes: Maximum file size before rotation (default: 1,000,000 bytes)
+            backup_count: Number of rotated backup files to keep (default: 5)
+            backup_days: Delete log entries older than this many days (default: 0 = infinite)
+            logger_name: Name of the internal logger instance (default: 'app')
+            use_database: Enable database logging via Django ORM (default: False)
+            db_level: Minimum log level for database storage (default: logging.INFO)
+
+        Returns:
+            logging.Logger: The configured logger instance
+
+        Note:
+            Database logging requires Django and that you've run migrations after
+            adding 'justlog.apps.JustLogConfig' to INSTALLED_APPS.
         """
         # Ensure file/dirs exist
         log_path = Path(log_file_path)
@@ -143,6 +163,16 @@ class _LoggerProxy:
             stream_handler.setLevel(to_stderr_level)
             stream_handler.setFormatter(formatter)
             logger.addHandler(stream_handler)
+
+        # Add database handler if requested
+        if use_database:
+            try:
+                from .db_handler import DatabaseHandler
+                db_handler = DatabaseHandler()
+                db_handler.setLevel(db_level)
+                logger.addHandler(db_handler)
+            except ImportError:
+                logger.warning('Database logging requested but Django is not available')
 
         self._logger = logger
 

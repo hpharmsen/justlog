@@ -14,21 +14,24 @@ def log_viewer_view(request):
     - page: Page number (default: 1)
     - level: Minimum log level to display (default: info)
     - per_page: Number of log entries per page (default: 200)
+    - source: Data source ('file' or 'db', default: 'file')
     """
     from django.http import HttpResponse, Http404
     from django.utils.html import escape
 
-    # Get log file path from lg instance
-    if not lg.log_file_path or not lg.log_file_path.exists():
-        return HttpResponse(
-            '<html><body><h1>JustLog Viewer</h1><p>No log file found. '
-            'Have you called setup_logging()?</p></body></html>'
-        )
-
     # Get query parameters
+    source = request.GET.get('source', 'file')
     level_name = request.GET.get('level', 'info').upper()
     page = int(request.GET.get('page', 1))
     per_page = int(request.GET.get('per_page', 200))
+
+    # Check if we can read from the requested source
+    if source == 'file':
+        if not lg.log_file_path or not lg.log_file_path.exists():
+            return HttpResponse(
+                '<html><body><h1>JustLog Viewer</h1><p>No log file found. '
+                'Have you called setup_logging()?</p></body></html>'
+            )
 
     # Map level names to numeric values
     level_map = {
@@ -41,8 +44,11 @@ def log_viewer_view(request):
 
     min_level = level_map.get(level_name, logging.INFO)
 
-    # Read and filter log entries (each entry may be multi-line)
-    log_entries = _read_and_filter_logs(lg.log_file_path, min_level)
+    # Read log entries from the selected source
+    if source == 'db':
+        log_entries = _read_logs_from_database(min_level)
+    else:
+        log_entries = _read_and_filter_logs(lg.log_file_path, min_level)
 
     # Reverse so newest logs are first
     log_entries.reverse()
@@ -62,9 +68,66 @@ def log_viewer_view(request):
         total_entries=total_entries,
         level_name=level_name,
         per_page=per_page,
+        source=source,
     )
 
     return HttpResponse(html)
+
+
+def _read_logs_from_database(min_level: int) -> List[List[str]]:
+    """
+    Reads log entries from database and formats them like file entries.
+    Returns list of log entries (each entry is a list of lines).
+    """
+    try:
+        from .models import LogEntry
+        from django.utils.html import escape
+        import json
+
+        # Query database for logs at or above min_level, ordered newest first
+        entries = LogEntry.objects.filter(level__gte=min_level).order_by('-timestamp')
+
+        formatted_entries = []
+        for entry in entries:
+            lines = []
+
+            # Format main log line (matching file format)
+            timestamp_str = entry.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            level_name = entry.get_level_display()
+            main_line = f'{timestamp_str} {level_name} {entry.message}'
+            lines.append(main_line)
+
+            # Add extra_args if present
+            if entry.extra_args:
+                for arg in entry.extra_args:
+                    lines.append(f'  {arg}')
+
+            # Add extra_kwargs if present
+            if entry.extra_kwargs:
+                for key, value in entry.extra_kwargs.items():
+                    # Check if value looks like JSON
+                    if isinstance(value, str) and (
+                        (value.startswith('{') and value.endswith('}')) or
+                        (value.startswith('[') and value.endswith(']'))
+                    ):
+                        # Multi-line formatting
+                        try:
+                            parsed = json.loads(value)
+                            formatted = json.dumps(parsed, indent=2)
+                            lines.append(f'  {key}:')
+                            for line in formatted.split('\n'):
+                                lines.append(f'    {line}')
+                        except json.JSONDecodeError:
+                            lines.append(f'  {key}: {value}')
+                    else:
+                        lines.append(f'  {key}: {value}')
+
+            formatted_entries.append(lines)
+
+        return formatted_entries
+
+    except Exception as e:
+        return [[f'Error reading from database: {e}']]
 
 
 def _read_and_filter_logs(log_path: Path, min_level: int) -> List[List[str]]:
@@ -132,6 +195,7 @@ def _build_html_response(
     total_entries: int,
     level_name: str,
     per_page: int,
+    source: str = 'file',
 ) -> str:
     """
     Builds HTML response for log viewer.
@@ -178,18 +242,28 @@ def _build_html_response(
 
     pagination_html = '<div class="pagination">'
     if prev_page:
-        pagination_html += f'<a href="?level={level_name.lower()}&page={prev_page}&per_page={per_page}">« Previous</a> '
+        pagination_html += f'<a href="?source={source}&level={level_name.lower()}&page={prev_page}&per_page={per_page}">« Previous</a> '
     else:
         pagination_html += '<span class="disabled">« Previous</span> '
 
     pagination_html += f'<span class="page-info">Page {page} of {total_pages} ({total_entries} entries)</span>'
 
     if next_page:
-        pagination_html += f' <a href="?level={level_name.lower()}&page={next_page}&per_page={per_page}">Next »</a>'
+        pagination_html += f' <a href="?source={source}&level={level_name.lower()}&page={next_page}&per_page={per_page}">Next »</a>'
     else:
         pagination_html += ' <span class="disabled">Next »</span>'
 
     pagination_html += '</div>'
+
+    # Build source selector
+    source_selector_html = '<div class="source-selector">Source: '
+    for src in ['file', 'db']:
+        src_label = 'File' if src == 'file' else 'Database'
+        if src == source:
+            source_selector_html += f'<span class="active">{src_label}</span> '
+        else:
+            source_selector_html += f'<a href="?source={src}&level={level_name.lower()}&page=1&per_page={per_page}">{src_label}</a> '
+    source_selector_html += '</div>'
 
     # Build level filter
     levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -198,7 +272,7 @@ def _build_html_response(
         if level == level_name:
             level_filter_html += f'<span class="active">{level}</span> '
         else:
-            level_filter_html += f'<a href="?level={level.lower()}&page=1&per_page={per_page}">{level}</a> '
+            level_filter_html += f'<a href="?source={source}&level={level.lower()}&page=1&per_page={per_page}">{level}</a> '
     level_filter_html += '</div>'
 
     # Complete HTML
@@ -225,8 +299,26 @@ def _build_html_response(
             border-radius: 5px;
             margin-bottom: 20px;
         }}
+        .source-selector {{
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #3a3a3a;
+        }}
         .level-filter {{
             margin-bottom: 10px;
+        }}
+        .source-selector a, .source-selector .active {{
+            color: #4fc3f7;
+            text-decoration: none;
+            padding: 5px 10px;
+            background-color: #3a3a3a;
+            border-radius: 3px;
+            margin-right: 5px;
+        }}
+        .source-selector .active {{
+            color: #fff;
+            background-color: #28a745;
+            font-weight: bold;
         }}
         .level-filter a, .pagination a {{
             color: #4fc3f7;
@@ -284,6 +376,7 @@ def _build_html_response(
 <body>
     <h1>JustLog Viewer</h1>
     <div class="controls">
+        {source_selector_html}
         {level_filter_html}
         {pagination_html}
     </div>
