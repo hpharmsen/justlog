@@ -16,7 +16,8 @@ def setup_logging(*args, **kwargs):
     1. Add 'justlog.apps.JustLogConfig' to INSTALLED_APPS in settings.py
     2. Add 'justlog.middleware.JustLogMiddleware' to MIDDLEWARE in settings.py
     3. Call setup_logging() after INSTALLED_APPS is defined
-    4. The /lg/ URL endpoint will be available for viewing logs via the middleware
+    4. (Optional) Run 'python manage.py migrate' if using database logging
+    5. The /lg/ URL endpoint will be available for viewing logs via the middleware
 
     Example (Django settings.py):
         INSTALLED_APPS = [
@@ -32,7 +33,23 @@ def setup_logging(*args, **kwargs):
         ]
 
         from justlog import setup_logging
+
+        # Basic file logging
         setup_logging('logs/django.log')
+
+        # With database logging (requires migration)
+        setup_logging('logs/django.log', use_database=True, db_level=logging.INFO)
+
+    Parameters:
+        log_file_path: Path to log file (required)
+        level: Minimum level for file logging (default: logging.INFO)
+        to_stderr_level: Minimum level for stderr (default: logging.NOTSET)
+        max_bytes: Max file size before rotation (default: 1_000_000)
+        backup_count: Number of backup files to keep (default: 5)
+        backup_days: Days to keep logs (0 = infinite, default: 0)
+        logger_name: Internal logger name (default: 'app')
+        use_database: Enable database logging (default: False, requires Django)
+        db_level: Minimum level for database logging (default: logging.INFO)
 
     See lg.setup_logging for full parameter documentation.
     """

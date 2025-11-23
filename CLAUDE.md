@@ -37,12 +37,16 @@ The project implements a singleton-pattern logging proxy:
 - `_LoggerProxy` class provides a facade over Python's standard logging
 - `lg` is the importable singleton instance used throughout applications
 - Supports file rotation, stderr output, and automatic log cleanup based on age
+- Optional database logging via Django ORM for queryable structured logs
 - Handles uncaught exceptions by logging them before termination
 - Self-bootstraps with minimal stderr logger if setup_logging() not called
 
 Key features:
 - Rotating file handler with configurable size limits and backup counts
 - Optional stderr output with separate log level control
+- Optional database storage with Django ORM (use_database parameter)
 - Automatic directory creation for log files
 - Time-based log cleanup (backup_days parameter)
 - Exception hook integration for uncaught exception logging
+- Structured logging: preserves extra arguments as JSON in database
+- Web-based log viewer at `/lg/` with file/database source toggle
