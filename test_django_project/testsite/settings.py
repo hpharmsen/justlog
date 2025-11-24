@@ -48,6 +48,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "justlog.middleware.JustLogMiddleware",
 ]
 
 ROOT_URLCONF = "testsite.urls"
@@ -123,5 +124,6 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Configure justlog
+import logging
 from justlog import setup_logging
-setup_logging('logs/testsite.log', to_stderr_level=20)
+setup_logging('logs/testsite.log', to_stderr_level=20, use_database=True, db_level=logging.INFO)
