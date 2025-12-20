@@ -93,7 +93,7 @@ setup_logging(
 | `to_stderr_level` | `int` | `logging.NOTSET` | Minimum level for stderr (0 = disabled) |
 | `max_bytes` | `int` | `1_000_000` | Max file size before rotation |
 | `backup_count` | `int` | `5` | Number of backup files to keep |
-| `backup_days` | `int` | `0` | Days to keep (0 = infinite) |
+| `backup_days` | `int` | `30` | Days to keep logs, file and database (0 = infinite) |
 | `logger_name` | `str` | `"app"` | Internal logger name |
 | `use_database` | `bool` | `False` | Enable database logging (requires Django) |
 | `db_level` | `int` | `logging.INFO` | Minimum level for database logging |

@@ -111,7 +111,7 @@ class _LoggerProxy:
         to_stderr_level: int = logging.NOTSET,  # Level from which logging to stderr occurs
         max_bytes: int = 1_000_000, # Max size of a log file, above this size it is rotated with a .1 suffix
         backup_count: int = 5,      # Max number of old log files to keep .1 .2 .3 etc.
-        backup_days: int = 0,       # Max number of days of old log files to keep. 0 is infinite
+        backup_days: int = 30,      # Max number of days to keep logs (file and database). 0 is infinite
         logger_name: str = "app",
         use_database: bool = False, # Enable database logging (requires Django)
         db_level: int = logging.INFO,  # Minimum level for database logging
@@ -126,7 +126,7 @@ class _LoggerProxy:
             to_stderr_level: Minimum level for stderr output (default: logging.NOTSET, 0 = disabled)
             max_bytes: Maximum file size before rotation (default: 1,000,000 bytes)
             backup_count: Number of rotated backup files to keep (default: 5)
-            backup_days: Delete log entries older than this many days (default: 0 = infinite)
+            backup_days: Delete log entries older than this many days (default: 30, 0 = infinite)
             logger_name: Name of the internal logger instance (default: 'app')
             use_database: Enable database logging via Django ORM (default: False)
             db_level: Minimum log level for database storage (default: logging.INFO)
@@ -184,6 +184,8 @@ class _LoggerProxy:
         self.backup_days = backup_days
         if self.backup_days:
             self.cleanup_old_logs()
+            if self.use_database:
+                self._cleanup_old_db_logs()
 
         try:
             from .django_integration import setup_django
@@ -300,23 +302,33 @@ class _LoggerProxy:
         )
 
     def cleanup_old_logs(self):
+        """Remove old entries from the log file."""
         cutoff = datetime.now() - timedelta(days=self.backup_days)
         lines_to_keep = []
 
         with open(self.log_file_path, "r", encoding="utf-8") as f:
             for line in f:
                 try:
-                    # Verwacht dat je log begint met iets als: "2025-10-05 15:23:45 ..."
                     timestamp_str = line.split(" ")[0] + " " + line.split(" ")[1]
                     timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
                     if timestamp >= cutoff:
                         lines_to_keep.append(line)
                 except Exception:
-                    # Als een regel geen timestamp bevat, behouden we hem
                     lines_to_keep.append(line)
 
         with open(self.log_file_path, "w", encoding="utf-8") as f:
             f.writelines(lines_to_keep)
+
+    def _cleanup_old_db_logs(self):
+        """Remove old entries from the database."""
+        try:
+            from .models import LogEntry
+            cutoff = datetime.now() - timedelta(days=self.backup_days)
+            deleted, _ = LogEntry.objects.filter(timestamp__lt=cutoff).delete()
+            if deleted:
+                self.info(f'Cleaned up {deleted} old log entries from database')
+        except Exception:
+            pass  # Don't crash if cleanup fails
 
 
 # Importable singleton
