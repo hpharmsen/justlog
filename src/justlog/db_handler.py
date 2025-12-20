@@ -23,8 +23,10 @@ class DatabaseHandler(logging.Handler):
         try:
             LogEntry = self._get_model()
 
-            # Convert timestamp to CET timezone
-            timestamp = datetime.fromtimestamp(record.created, tz=ZoneInfo('Europe/Amsterdam'))
+            # Convert timestamp to CET timezone (naive datetime for USE_TZ=False)
+            utc_dt = datetime.fromtimestamp(record.created, tz=ZoneInfo('UTC'))
+            cet_dt = utc_dt.astimezone(ZoneInfo('Europe/Amsterdam'))
+            timestamp = cet_dt.replace(tzinfo=None)  # Store as naive datetime
 
             # Extract extra args and kwargs if present
             extra_args = getattr(record, '_extra_args', None)

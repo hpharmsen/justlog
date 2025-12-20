@@ -19,8 +19,9 @@ def log_viewer_view(request):
     from django.http import HttpResponse, Http404
     from django.utils.html import escape
 
-    # Get query parameters
-    source = request.GET.get('source', 'file')
+    # Get query parameters - default to 'db' if database logging is enabled
+    default_source = 'db' if lg.use_database else 'file'
+    source = request.GET.get('source', default_source)
     level_name = request.GET.get('level', 'info').upper()
     page = int(request.GET.get('page', 1))
     per_page = int(request.GET.get('per_page', 200))
@@ -44,18 +45,20 @@ def log_viewer_view(request):
 
     min_level = level_map.get(level_name, logging.INFO)
 
-    # Read log entries from the selected source
+    # Read log entries from the selected source (oldest first, newest last)
     if source == 'db':
         log_entries = _read_logs_from_database(min_level)
     else:
         log_entries = _read_and_filter_logs(lg.log_file_path, min_level)
 
-    # Reverse so newest logs are first
-    log_entries.reverse()
-
     # Pagination by complete entries (never split an entry)
     total_entries = len(log_entries)
-    total_pages = (total_entries + per_page - 1) // per_page
+    total_pages = max(1, (total_entries + per_page - 1) // per_page)
+
+    # Default to last page (newest entries) if no page specified
+    if 'page' not in request.GET:
+        page = total_pages
+
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
     page_entries = log_entries[start_idx:end_idx]
@@ -84,8 +87,9 @@ def _read_logs_from_database(min_level: int) -> List[List[str]]:
         from django.utils.html import escape
         import json
 
-        # Query database for logs at or above min_level, ordered newest first
-        entries = LogEntry.objects.filter(level__gte=min_level).order_by('-timestamp')
+        # Query database for logs at or above min_level, ordered oldest first
+        # (consistent with file reading, the view will reverse later)
+        entries = LogEntry.objects.filter(level__gte=min_level).order_by('timestamp')
 
         formatted_entries = []
         for entry in entries:
@@ -356,7 +360,8 @@ def _build_html_response(
             border: 1px solid #30363d;
             border-radius: 5px;
             padding: 15px;
-            overflow-x: auto;
+            overflow: auto;
+            max-height: 70vh;
         }}
         .log-entry {{
             line-height: 1.5;
@@ -387,6 +392,13 @@ def _build_html_response(
     <div class="controls">
         {pagination_html}
     </div>
+    <script>
+        // Auto-scroll to bottom on page load
+        window.onload = function() {{
+            var container = document.querySelector('.log-container');
+            container.scrollTop = container.scrollHeight;
+        }};
+    </script>
 </body>
 </html>'''
 

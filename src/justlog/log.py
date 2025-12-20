@@ -100,6 +100,7 @@ class _LoggerProxy:
     def __init__(self) -> None:
         self._logger: Optional[logging.Logger] = None
         self.log_file_path: Optional[Path] = None
+        self.use_database: bool = False
 
     # ---- Public API -----------------------------------------------------
 
@@ -171,6 +172,7 @@ class _LoggerProxy:
                 db_handler = DatabaseHandler()
                 db_handler.setLevel(db_level)
                 logger.addHandler(db_handler)
+                self.use_database = True
             except ImportError:
                 logger.warning('Database logging requested but Django is not available')
 

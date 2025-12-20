@@ -4,3 +4,4 @@
 /src/justlog.egg-info/
 /dist/
 /test_changes.py
+__pycache__/
