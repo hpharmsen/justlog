@@ -194,7 +194,6 @@ class _LoggerProxy:
         except ImportError:
             pass  # django_integration module not available
 
-
         return logger
 
     # ---- Logger-like delegation ----------------------------------------
@@ -278,15 +277,23 @@ class _LoggerProxy:
         if self._logger is not None:
             return self._logger
 
+        # Check if there's already a configured 'app' logger (e.g., from Django app ready())
+        # This handles the case where setup_logging was called but lg._logger was reset
+        # (e.g., in multiprocessing child processes after Django re-initializes)
+        existing_logger = logging.getLogger("app")
+        if existing_logger.handlers:
+            # Logger was already configured, reuse it
+            self._logger = existing_logger
+            return self._logger
+
         # Minimal bootstrap to avoid AttributeError before setup
-        logger = logging.getLogger("app")
+        logger = existing_logger
         logger.setLevel(logging.WARNING)
         logger.propagate = False
-        if not logger.handlers:
-            formatter = StructuredFormatter(fmt=DEFAULT_FMT, datefmt=DEFAULT_DATEFMT)
-            sh = logging.StreamHandler(sys.stderr)
-            sh.setFormatter(formatter)
-            logger.addHandler(sh)
+        formatter = StructuredFormatter(fmt=DEFAULT_FMT, datefmt=DEFAULT_DATEFMT)
+        sh = logging.StreamHandler(sys.stderr)
+        sh.setFormatter(formatter)
+        logger.addHandler(sh)
         self._logger = logger
         return logger
 
