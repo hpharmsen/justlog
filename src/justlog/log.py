@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 import sys
 import traceback
+import urllib.request
+import urllib.error
 from pathlib import Path
 from types import TracebackType
 from typing import Optional, Type, Any
@@ -86,6 +88,53 @@ class StructuredFormatter(logging.Formatter):
         return ' ' * indent + value
 
 
+class WebhookHandler(logging.Handler):
+    """Handler that POSTs log messages to a webhook URL."""
+
+    def __init__(self, webhook_url: str, timeout: int = 5):
+        super().__init__()
+        self.webhook_url = webhook_url
+        self.timeout = timeout
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Post log message to webhook URL."""
+        try:
+            # Build message body with extra args/kwargs if present
+            body_parts = [record.getMessage()]
+
+            if hasattr(record, '_extra_args') and record._extra_args:
+                for arg in record._extra_args:
+                    body_parts.append(str(arg))
+
+            if hasattr(record, '_extra_kwargs') and record._extra_kwargs:
+                for key, value in record._extra_kwargs.items():
+                    body_parts.append(f'{key}: {value}')
+
+            body = '\n'.join(body_parts)
+
+            # Format subject with level and timestamp
+            timestamp = datetime.fromtimestamp(
+                record.created, tz=ZoneInfo('Europe/Amsterdam')
+            ).strftime(DEFAULT_DATEFMT)
+            subject = f'[{record.levelname}] {timestamp} - {record.getMessage()[:50]}'
+
+            payload = json.dumps({
+                'subject': subject,
+                'body': body,
+            }).encode('utf-8')
+
+            req = urllib.request.Request(
+                self.webhook_url,
+                data=payload,
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+            urllib.request.urlopen(req, timeout=self.timeout)
+        except Exception:
+            # Don't let webhook failures crash the application
+            pass
+
+
 class _LoggerProxy:
     """
     Class-based, importable singleton-like logger facade.
@@ -115,29 +164,10 @@ class _LoggerProxy:
         logger_name: str = "app",
         use_database: bool = False, # Enable database logging (requires Django)
         db_level: int = logging.INFO,  # Minimum level for database logging
+        webhook: Optional[str] = None,  # Webhook URL to POST log messages to
+        webhook_level: int = logging.ERROR,  # Minimum level for webhook notifications
     ) -> logging.Logger:
-        """
-        Configure logging and bind the underlying logger to this proxy.
-        Safe to call more than once; it replaces previous handlers.
-
-        Args:
-            log_file_path: Path to the log file (required)
-            level: Minimum log level for file logging (default: logging.INFO)
-            to_stderr_level: Minimum level for stderr output (default: logging.NOTSET, 0 = disabled)
-            max_bytes: Maximum file size before rotation (default: 1,000,000 bytes)
-            backup_count: Number of rotated backup files to keep (default: 5)
-            backup_days: Delete log entries older than this many days (default: 30, 0 = infinite)
-            logger_name: Name of the internal logger instance (default: 'app')
-            use_database: Enable database logging via Django ORM (default: False)
-            db_level: Minimum log level for database storage (default: logging.INFO)
-
-        Returns:
-            logging.Logger: The configured logger instance
-
-        Note:
-            Database logging requires Django and that you've run migrations after
-            adding 'justlog.apps.JustLogConfig' to INSTALLED_APPS.
-        """
+        """Configure logging and bind the underlying logger to this proxy."""
         # Ensure file/dirs exist
         log_path = Path(log_file_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -175,6 +205,12 @@ class _LoggerProxy:
                 self.use_database = True
             except ImportError:
                 logger.warning('Database logging requested but Django is not available')
+
+        # Add webhook handler if configured
+        if webhook:
+            webhook_handler = WebhookHandler(webhook)
+            webhook_handler.setLevel(webhook_level)
+            logger.addHandler(webhook_handler)
 
         self._logger = logger
 

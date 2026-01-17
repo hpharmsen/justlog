@@ -97,6 +97,8 @@ setup_logging(
 | `logger_name` | `str` | `"app"` | Internal logger name |
 | `use_database` | `bool` | `False` | Enable database logging (requires Django) |
 | `db_level` | `int` | `logging.INFO` | Minimum level for database logging |
+| `webhook` | `str` | `None` | Webhook URL to POST log messages to |
+| `webhook_level` | `int` | `logging.ERROR` | Minimum level for webhook notifications |
 
 ## Features
 
@@ -104,10 +106,35 @@ setup_logging(
 - **File rotation**: Automatic rotation when size limit is reached
 - **Dual output**: Log to file and stderr with separate levels
 - **Database storage**: Optional database logging via Django ORM
+- **Webhook notifications**: POST log messages to external URLs (e.g., email services)
 - **Auto-cleanup**: Time-based cleanup of old entries
 - **Exception handling**: Uncaught exceptions are automatically logged
 - **Multi-argument support**: Pass any printable arguments
 - **Structured logging**: Preserves extra arguments as JSON in database
+
+## Webhook Notifications
+
+Send log messages to external services (email, Slack, etc.) via HTTP POST:
+
+```python
+import logging
+from justlog import setup_logging, lg
+
+setup_logging(
+    log_file_path='logs/app.log',
+    webhook='https://example.com/notify',
+    webhook_level=logging.ERROR  # Only ERROR and CRITICAL
+)
+
+lg.info('This goes to file only')
+lg.error('This triggers a webhook POST!')
+```
+
+The webhook receives a JSON POST with:
+- `subject`: `[LEVELNAME] timestamp - message (truncated)`
+- `body`: Full log message with extra arguments
+
+Webhook failures are silent and won't crash your application.
 
 ## Django Integration
 
