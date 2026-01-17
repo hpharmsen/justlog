@@ -91,9 +91,10 @@ class StructuredFormatter(logging.Formatter):
 class WebhookHandler(logging.Handler):
     """Handler that POSTs log messages to a webhook URL."""
 
-    def __init__(self, webhook_url: str, timeout: int = 5):
+    def __init__(self, webhook_url: str, app_name: str = '', timeout: int = 5):
         super().__init__()
         self.webhook_url = webhook_url
+        self.app_name = app_name
         self.timeout = timeout
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -110,13 +111,20 @@ class WebhookHandler(logging.Handler):
                 for key, value in record._extra_kwargs.items():
                     body_parts.append(f'{key}: {value}')
 
+            # Include exception traceback if present
+            if record.exc_info and record.exc_info[0] is not None:
+                body_parts.append('')
+                body_parts.append('Traceback:')
+                body_parts.append(''.join(traceback.format_exception(*record.exc_info)))
+
             body = '\n'.join(body_parts)
 
-            # Format subject with level and timestamp
+            # Format subject with level, timestamp, and optional app name
             timestamp = datetime.fromtimestamp(
                 record.created, tz=ZoneInfo('Europe/Amsterdam')
             ).strftime(DEFAULT_DATEFMT)
-            subject = f'[{record.levelname}] {timestamp} - {record.getMessage()[:50]}'
+            app_prefix = f'[{self.app_name}] ' if self.app_name else ''
+            subject = f'{app_prefix}[{record.levelname}] {timestamp} - {record.getMessage()[:50]}'
 
             payload = json.dumps({
                 'subject': subject,
@@ -166,6 +174,7 @@ class _LoggerProxy:
         db_level: int = logging.INFO,  # Minimum level for database logging
         webhook: Optional[str] = None,  # Webhook URL to POST log messages to
         webhook_level: int = logging.ERROR,  # Minimum level for webhook notifications
+        app_name: str = '',         # Application name for webhook notifications
     ) -> logging.Logger:
         """Configure logging and bind the underlying logger to this proxy."""
         # Ensure file/dirs exist
@@ -208,7 +217,7 @@ class _LoggerProxy:
 
         # Add webhook handler if configured
         if webhook:
-            webhook_handler = WebhookHandler(webhook)
+            webhook_handler = WebhookHandler(webhook, app_name=app_name)
             webhook_handler.setLevel(webhook_level)
             logger.addHandler(webhook_handler)
 
