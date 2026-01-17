@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "justlog"
-version = "0.5.9"
+version = "0.6.0"
 authors = [
     {name = "Hans-Peter Harmsen", email = "hp@harmsen.nl"},
 ]
