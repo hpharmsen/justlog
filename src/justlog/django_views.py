@@ -7,17 +7,8 @@ from .log import lg
 
 
 def log_viewer_view(request):
-    """
-    Django view for displaying logs with pagination and level filtering.
-
-    URL parameters:
-    - page: Page number (default: 1)
-    - level: Minimum log level to display (default: info)
-    - per_page: Number of log entries per page (default: 200)
-    - source: Data source ('file' or 'db', default: 'file')
-    """
-    from django.http import HttpResponse, Http404
-    from django.utils.html import escape
+    """Django view for displaying logs with pagination and level filtering."""
+    from django.http import HttpResponse
 
     # Get query parameters - default to 'db' if database logging is enabled
     default_source = 'db' if lg.use_database else 'file'
@@ -45,23 +36,20 @@ def log_viewer_view(request):
 
     min_level = level_map.get(level_name, logging.INFO)
 
-    # Read log entries from the selected source (oldest first, newest last)
+    # Read log entries from the selected source
     if source == 'db':
-        log_entries = _read_logs_from_database(min_level)
+        total_entries, page_entries = _read_logs_from_database(min_level, page, per_page, 'page' not in request.GET)
+        total_pages = max(1, (total_entries + per_page - 1) // per_page)
+        if 'page' not in request.GET:
+            page = total_pages
     else:
         log_entries = _read_and_filter_logs(lg.log_file_path, min_level)
-
-    # Pagination by complete entries (never split an entry)
-    total_entries = len(log_entries)
-    total_pages = max(1, (total_entries + per_page - 1) // per_page)
-
-    # Default to last page (newest entries) if no page specified
-    if 'page' not in request.GET:
-        page = total_pages
-
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    page_entries = log_entries[start_idx:end_idx]
+        total_entries = len(log_entries)
+        total_pages = max(1, (total_entries + per_page - 1) // per_page)
+        if 'page' not in request.GET:
+            page = total_pages
+        start_idx = (page - 1) * per_page
+        page_entries = log_entries[start_idx:start_idx + per_page]
 
     # Build HTML response
     html = _build_html_response(
@@ -77,50 +65,59 @@ def log_viewer_view(request):
     return HttpResponse(html)
 
 
-def _read_logs_from_database(min_level: int) -> List[List[str]]:
-    """
-    Reads log entries from database and formats them like file entries.
-    Returns list of log entries (each entry is a list of lines).
-    """
+def _fast_count(queryset) -> int:
+    """Use PostgreSQL estimated count for large tables, falling back to exact count."""
+    try:
+        from django.db import connection
+        if connection.vendor == 'postgresql':
+            # Get estimated total rows from pg_class (instant, no table scan)
+            table_name = queryset.model._meta.db_table
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT reltuples::bigint FROM pg_class WHERE relname = %s', [table_name])
+                row = cursor.fetchone()
+                if row and row[0] > 0:
+                    return row[0]
+    except Exception:
+        pass
+    return queryset.count()
+
+
+def _read_logs_from_database(min_level: int, page: int, per_page: int, default_to_last: bool) -> Tuple[int, List[List[str]]]:
+    """Reads a page of log entries from database with database-level pagination."""
     try:
         from .models import LogEntry
-        from django.utils.html import escape
         import json
 
-        # Query database for logs at or above min_level, ordered oldest first
-        # (consistent with file reading, the view will reverse later)
-        entries = LogEntry.objects.filter(level__gte=min_level).order_by('timestamp')
+        queryset = LogEntry.objects.filter(level__gte=min_level)
+
+        # Use PostgreSQL estimated count for large tables, exact count for small ones
+        total_entries = _fast_count(queryset)
+        total_pages = max(1, (total_entries + per_page - 1) // per_page)
+
+        if default_to_last:
+            page = total_pages
+
+        offset = (page - 1) * per_page
+        entries = queryset.order_by('timestamp')[offset:offset + per_page]
 
         formatted_entries = []
         for entry in entries:
-            lines = []
+            lines = [f'{entry.timestamp.strftime("%Y-%m-%d %H:%M:%S")} {entry.get_level_display()} {entry.message}']
 
-            # Format main log line (matching file format)
-            timestamp_str = entry.timestamp.strftime('%Y-%m-%d %H:%M:%S')
-            level_name = entry.get_level_display()
-            main_line = f'{timestamp_str} {level_name} {entry.message}'
-            lines.append(main_line)
-
-            # Add extra_args if present
             if entry.extra_args:
-                for arg in entry.extra_args:
-                    lines.append(f'  {arg}')
+                lines.extend(f'  {arg}' for arg in entry.extra_args)
 
-            # Add extra_kwargs if present
             if entry.extra_kwargs:
                 for key, value in entry.extra_kwargs.items():
-                    # Check if value looks like JSON
                     if isinstance(value, str) and (
                         (value.startswith('{') and value.endswith('}')) or
                         (value.startswith('[') and value.endswith(']'))
                     ):
-                        # Multi-line formatting
                         try:
                             parsed = json.loads(value)
                             formatted = json.dumps(parsed, indent=2)
                             lines.append(f'  {key}:')
-                            for line in formatted.split('\n'):
-                                lines.append(f'    {line}')
+                            lines.extend(f'    {line}' for line in formatted.split('\n'))
                         except json.JSONDecodeError:
                             lines.append(f'  {key}: {value}')
                     else:
@@ -128,10 +125,10 @@ def _read_logs_from_database(min_level: int) -> List[List[str]]:
 
             formatted_entries.append(lines)
 
-        return formatted_entries
+        return total_entries, formatted_entries
 
     except Exception as e:
-        return [[f'Error reading from database: {e}']]
+        return 0, [[f'Error reading from database: {e}']]
 
 
 def _read_and_filter_logs(log_path: Path, min_level: int) -> List[List[str]]:
