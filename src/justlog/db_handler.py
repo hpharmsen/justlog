@@ -1,15 +1,19 @@
 # db_handler.py
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+CLEANUP_INTERVAL = 1000  # Run cleanup every N log writes
 
 
 class DatabaseHandler(logging.Handler):
     """Custom logging handler that writes logs to Django database."""
 
-    def __init__(self):
+    def __init__(self, backup_days: int = 30):
         super().__init__()
         self._model = None
+        self.backup_days = backup_days
+        self._write_count = 0
 
     def _get_model(self):
         """Lazy load the Django model to avoid circular imports."""
@@ -40,6 +44,18 @@ class DatabaseHandler(logging.Handler):
                 extra_kwargs=extra_kwargs if extra_kwargs else None,
             )
 
+            # Periodically cleanup old entries
+            self._write_count += 1
+            if self.backup_days and self._write_count >= CLEANUP_INTERVAL:
+                self._write_count = 0
+                self._cleanup(LogEntry)
+
         except Exception:
             # Don't let logging errors crash the application
             self.handleError(record)
+
+    def _cleanup(self, LogEntry):
+        """Remove entries older than backup_days."""
+        from django.utils import timezone
+        cutoff = timezone.now() - timedelta(days=self.backup_days)
+        LogEntry.objects.filter(timestamp__lt=cutoff).delete()

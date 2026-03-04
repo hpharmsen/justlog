@@ -208,7 +208,7 @@ class _LoggerProxy:
         if use_database:
             try:
                 from .db_handler import DatabaseHandler
-                db_handler = DatabaseHandler()
+                db_handler = DatabaseHandler(backup_days=backup_days)
                 db_handler.setLevel(db_level)
                 logger.addHandler(db_handler)
                 self.use_database = True
@@ -380,8 +380,8 @@ class _LoggerProxy:
             deleted, _ = LogEntry.objects.filter(timestamp__lt=cutoff).delete()
             if deleted:
                 self.info(f'Cleaned up {deleted} old log entries from database')
-        except Exception:
-            pass  # Don't crash if cleanup fails
+        except Exception as e:
+            self.warning(f'Database log cleanup failed: {e}')
 
 
 # Importable singleton
