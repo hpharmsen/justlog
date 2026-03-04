@@ -375,7 +375,8 @@ class _LoggerProxy:
         """Remove old entries from the database."""
         try:
             from .models import LogEntry
-            cutoff = datetime.now() - timedelta(days=self.backup_days)
+            from django.utils import timezone
+            cutoff = timezone.now() - timedelta(days=self.backup_days)
             deleted, _ = LogEntry.objects.filter(timestamp__lt=cutoff).delete()
             if deleted:
                 self.info(f'Cleaned up {deleted} old log entries from database')

@@ -65,23 +65,6 @@ def log_viewer_view(request):
     return HttpResponse(html)
 
 
-def _fast_count(queryset) -> int:
-    """Use PostgreSQL estimated count for large tables, falling back to exact count."""
-    try:
-        from django.db import connection
-        if connection.vendor == 'postgresql':
-            # Get estimated total rows from pg_class (instant, no table scan)
-            table_name = queryset.model._meta.db_table
-            with connection.cursor() as cursor:
-                cursor.execute('SELECT reltuples::bigint FROM pg_class WHERE relname = %s', [table_name])
-                row = cursor.fetchone()
-                if row and row[0] > 0:
-                    return row[0]
-    except Exception:
-        pass
-    return queryset.count()
-
-
 def _read_logs_from_database(min_level: int, page: int, per_page: int, default_to_last: bool) -> Tuple[int, List[List[str]]]:
     """Reads a page of log entries from database with database-level pagination."""
     try:
@@ -89,16 +72,17 @@ def _read_logs_from_database(min_level: int, page: int, per_page: int, default_t
         import json
 
         queryset = LogEntry.objects.filter(level__gte=min_level)
-
-        # Use PostgreSQL estimated count for large tables, exact count for small ones
-        total_entries = _fast_count(queryset)
+        total_entries = queryset.count()
         total_pages = max(1, (total_entries + per_page - 1) // per_page)
 
         if default_to_last:
             page = total_pages
-
-        offset = (page - 1) * per_page
-        entries = queryset.order_by('timestamp')[offset:offset + per_page]
+            # Fetch newest entries via DESC and reverse for chronological display
+            entries = list(queryset.order_by('-timestamp')[:per_page])
+            entries.reverse()
+        else:
+            offset = (page - 1) * per_page
+            entries = queryset.order_by('timestamp')[offset:offset + per_page]
 
         formatted_entries = []
         for entry in entries:
