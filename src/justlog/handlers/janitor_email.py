@@ -6,17 +6,19 @@ window, and never lets SMTP failures bubble up into the host process.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import smtplib
 import sys
 import time
-import traceback
 from email.message import EmailMessage
 from typing import Callable, Optional
 
+from ._common import SUBJECT_PREVIEW_CHARS, fingerprint_from_record, format_body
 
-_SUBJECT_PREVIEW_CHARS = 80
+# Backward-compat re-exports (tests reach for the underscore names).
+_SUBJECT_PREVIEW_CHARS = SUBJECT_PREVIEW_CHARS
+_fingerprint_from_record = fingerprint_from_record
+_build_body = format_body
 
 
 class JanitorEmailHandler(logging.Handler):
@@ -55,7 +57,7 @@ class JanitorEmailHandler(logging.Handler):
         try:
             if record.levelno < self.level:
                 return
-            fingerprint = _fingerprint_from_record(record, self.project)
+            fingerprint = fingerprint_from_record(record, self.project)
             if self._is_rate_limited(fingerprint):
                 return
             msg = self._build_message(record, fingerprint)
@@ -74,13 +76,13 @@ class JanitorEmailHandler(logging.Handler):
         msg = EmailMessage()
         msg['From'] = self.from_addr
         msg['To'] = self.to_addr
-        msg['Subject'] = f'[{record.levelname}] {self.project}: {record.getMessage()[:_SUBJECT_PREVIEW_CHARS]}'
+        msg['Subject'] = f'[{record.levelname}] {self.project}: {record.getMessage()[:SUBJECT_PREVIEW_CHARS]}'
         msg['X-Janitor-Source'] = 'justlog'
         msg['X-Janitor-Project'] = self.project
         msg['X-Janitor-Level'] = record.levelname
         msg['X-Janitor-Logger'] = record.name
         msg['X-Janitor-Fingerprint'] = fingerprint
-        msg.set_content(_build_body(record))
+        msg.set_content(format_body(record))
         return msg
 
     def _send(self, msg: EmailMessage) -> None:
@@ -93,42 +95,3 @@ class JanitorEmailHandler(logging.Handler):
             smtp.sendmail(self.from_addr, [self.to_addr], msg.as_string())
         finally:
             smtp.quit()
-
-
-# --- helpers ----------------------------------------------------------------
-
-
-def _build_body(record: logging.LogRecord) -> str:
-    parts: list[str] = [record.getMessage()]
-    if record.exc_info and record.exc_info[0] is not None:
-        parts.append('')
-        parts.append('Traceback:')
-        parts.append(''.join(traceback.format_exception(*record.exc_info)))
-    return '\n'.join(parts)
-
-
-def _fingerprint_from_record(record: logging.LogRecord, project: str) -> str:
-    """SHA-1 over (project, logger, exception class, normalized top frame).
-
-    Mirrors janitor.dedup.fingerprint_for_justlog so a JustLog client and
-    the Janitor ingress always agree on what counts as "the same error".
-    """
-    logger = record.name or ''
-    exc_class, top_frame = _exception_signature(record)
-    payload = '\x00'.join([project, logger, exc_class, top_frame]).encode('utf-8')
-    return hashlib.sha1(payload).hexdigest()
-
-
-def _exception_signature(record: logging.LogRecord) -> tuple[str, str]:
-    if not record.exc_info or record.exc_info[0] is None:
-        return '', ''
-    exc_type, _exc, tb = record.exc_info
-    exc_class = exc_type.__name__
-    if tb is None:
-        return exc_class, ''
-    frames = traceback.extract_tb(tb)
-    if not frames:
-        return exc_class, ''
-    innermost = frames[-1]
-    basename = innermost.filename.rsplit('/', 1)[-1]
-    return exc_class, f'{basename}:{innermost.name}'
