@@ -21,7 +21,7 @@ from typing import Callable, Optional
 from ._common import SUBJECT_PREVIEW_CHARS, fingerprint_from_record, format_body
 
 
-DEFAULT_URL = 'https://harmsen.nl/emailme/'
+DEFAULT_URL = 'https://www.harmsen.nl/emailme/'
 
 
 class JanitorWebhookHandler(logging.Handler):
@@ -93,6 +93,7 @@ class JanitorWebhookHandler(logging.Handler):
             headers={
                 'Content-Type': 'application/json',
                 'X-Emailme-Token': self.token,
+                'User-Agent': 'justlog-webhook/1.0',
             },
             method='POST',
         )
