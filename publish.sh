@@ -1,10 +1,10 @@
 start_time=$(date +%s)
 #pip install --upgrade pip
 #pip install twine build
-/bin/rm -f dist/*
-export VERSION=`python bumpversion.py -v minor`
+#/bin/rm -f dist/*
+export VERSION=`python bumpversion.py -v patch`
 python -m build
-twine upload dist/*
+#twine upload dist/*
 git commit -v -a -m "publish `date`"
 git tag -a $VERSION -m "version $VERSION"
 git push origin main

@@ -136,6 +136,46 @@ The webhook receives a JSON POST with:
 
 Webhook failures are silent and won't crash your application.
 
+## Janitor integration
+
+The `JanitorEmailHandler` ships ERROR/CRITICAL records by SMTP to a
+[Janitor](https://github.com/hpharmsen/janitor) inbox so they can be
+triaged by the bot. It sets the `X-Janitor-*` headers Janitor's ingress
+parser expects, computes a deterministic fingerprint per error, and
+suppresses repeats of the same fingerprint within a sliding window so a
+single recurring error doesn't flood your inbox.
+
+```python
+import logging
+from justlog import lg, setup_logging
+from justlog.handlers import JanitorEmailHandler
+
+setup_logging('logs/app.log')
+
+lg.addHandler(JanitorEmailHandler(
+    project='website',
+    to_addr='errors+website@harmsen.nl',
+    from_addr='website@harmsen.nl',
+    smtp_host='smtp.gmail.com',
+    smtp_port=587,
+    smtp_user='website@harmsen.nl',
+    smtp_password='<app-password>',
+    level=logging.ERROR,        # default
+    rate_limit_window=60.0,     # max 1 mail per fingerprint per 60s
+))
+
+try:
+    1 / 0
+except ZeroDivisionError:
+    lg.error('payment processing failed', exc_info=True)
+```
+
+The mail's fingerprint is `sha1(project ∥ logger ∥ exception_class ∥
+basename:func)`, identical to what Janitor recomputes on its side — so
+the same exception from the same code path is recognised as one issue
+whether it fires in dev or production. SMTP errors are caught and
+written to stderr; they never propagate into the host process.
+
 ## Django Integration
 
 JustLog integrates seamlessly with Django to provide a web-based log viewer at `/lg/`.
