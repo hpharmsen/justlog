@@ -13,7 +13,12 @@ import time
 from email.message import EmailMessage
 from typing import Callable, Optional
 
-from ._common import SUBJECT_PREVIEW_CHARS, fingerprint_from_record, format_body
+from ._common import (
+    SUBJECT_PREVIEW_CHARS,
+    build_subject,
+    fingerprint_from_record,
+    format_body,
+)
 
 # Backward-compat re-exports (tests reach for the underscore names).
 _SUBJECT_PREVIEW_CHARS = SUBJECT_PREVIEW_CHARS
@@ -76,7 +81,7 @@ class JanitorEmailHandler(logging.Handler):
         msg = EmailMessage()
         msg['From'] = self.from_addr
         msg['To'] = self.to_addr
-        msg['Subject'] = f'[{record.levelname}] {self.project}: {record.getMessage()[:SUBJECT_PREVIEW_CHARS]}'
+        msg['Subject'] = build_subject(record, self.project)
         msg['X-Janitor-Source'] = 'justlog'
         msg['X-Janitor-Project'] = self.project
         msg['X-Janitor-Level'] = record.levelname

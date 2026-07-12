@@ -138,6 +138,28 @@ def test_emit_body_includes_traceback(opener, clock):
     assert 'Traceback' in body
 
 
+def test_subject_encodes_exception_signature_for_gmail_threading(opener, clock):
+    handler = _make_handler(opener, clock)
+    handler.emit(_record_with_exception())
+
+    subject = _payload_of(opener.requests[0])['subject']
+    assert 'ZeroDivisionError' in subject
+    assert '_record_with_exception' in subject
+    assert 'boom' not in subject  # generic message must not leak into subject
+
+
+def test_subject_falls_back_to_message_without_exception(opener, clock):
+    handler = _make_handler(opener, clock)
+    record = logging.LogRecord(
+        name='app', level=logging.ERROR, pathname=__file__, lineno=1,
+        msg='database timeout', args=(), exc_info=None,
+    )
+    handler.emit(record)
+
+    subject = _payload_of(opener.requests[0])['subject']
+    assert subject == '[ERROR] website: database timeout'
+
+
 def test_emit_sends_json_and_shared_secret(opener, clock):
     handler = _make_handler(opener, clock, token='secret-abc')
     handler.emit(_record_with_exception())

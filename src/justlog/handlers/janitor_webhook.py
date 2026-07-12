@@ -18,7 +18,7 @@ import time
 import urllib.request
 from typing import Callable, Optional
 
-from ._common import SUBJECT_PREVIEW_CHARS, fingerprint_from_record, format_body
+from ._common import build_subject, fingerprint_from_record, format_body
 
 
 DEFAULT_URL = 'https://www.harmsen.nl/emailme/'
@@ -70,9 +70,8 @@ class JanitorWebhookHandler(logging.Handler):
         return (self._clock() - last) < self.rate_limit_window
 
     def _build_payload(self, record: logging.LogRecord, fingerprint: str) -> dict:
-        subject = f'[{record.levelname}] {self.project}: {record.getMessage()[:SUBJECT_PREVIEW_CHARS]}'
         return {
-            'subject': subject,
+            'subject': build_subject(record, self.project),
             'body': format_body(record),
             'sender_email': self.from_addr,
             'recipient': self.recipient,
