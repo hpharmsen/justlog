@@ -25,6 +25,7 @@ class DatabaseHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
         """Write a log record to the database."""
         try:
+            from django.db import close_old_connections, connection
             LogEntry = self._get_model()
 
             # Convert timestamp to CET timezone (aware datetime for USE_TZ=True)
@@ -35,14 +36,32 @@ class DatabaseHandler(logging.Handler):
             extra_args = getattr(record, '_extra_args', None)
             extra_kwargs = getattr(record, '_extra_kwargs', None)
 
-            # Create the log entry
-            LogEntry.objects.create(
-                timestamp=timestamp,
-                level=record.levelno,
-                message=record.getMessage(),
-                extra_args=extra_args if extra_args else None,
-                extra_kwargs=extra_kwargs if extra_kwargs else None,
-            )
+            # Drop any stale connection (server-side idle timeout, network drop)
+            # before writing — long-running scripts commonly leave a dead conn.
+            close_old_connections()
+
+            try:
+                LogEntry.objects.create(
+                    timestamp=timestamp,
+                    level=record.levelno,
+                    message=record.getMessage(),
+                    extra_args=extra_args if extra_args else None,
+                    extra_kwargs=extra_kwargs if extra_kwargs else None,
+                )
+            except Exception:
+                # Race: conn died between close_old_connections and create.
+                # Force-close and retry once with a fresh connection.
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+                LogEntry.objects.create(
+                    timestamp=timestamp,
+                    level=record.levelno,
+                    message=record.getMessage(),
+                    extra_args=extra_args if extra_args else None,
+                    extra_kwargs=extra_kwargs if extra_kwargs else None,
+                )
 
             # Periodically cleanup old entries
             self._write_count += 1
