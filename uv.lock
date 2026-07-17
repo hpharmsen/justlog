@@ -8,5 +8,5 @@ exclude-newer-span = "P7D"
 
 [[package]]
 name = "justlog"
-version = "0.8.2"
+version = "0.8.4"
 source = { editable = "." }

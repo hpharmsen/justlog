@@ -38,7 +38,11 @@ class DatabaseHandler(logging.Handler):
 
             # Drop any stale connection (server-side idle timeout, network drop)
             # before writing — long-running scripts commonly leave a dead conn.
-            close_old_connections()
+            # Skip inside a transaction (e.g. Django TestCase) — closing the
+            # connection there would abort the enclosing atomic block.
+            in_transaction = connection.in_atomic_block
+            if not in_transaction:
+                close_old_connections()
 
             try:
                 LogEntry.objects.create(
@@ -49,6 +53,8 @@ class DatabaseHandler(logging.Handler):
                     extra_kwargs=extra_kwargs if extra_kwargs else None,
                 )
             except Exception:
+                if in_transaction:
+                    raise
                 # Race: conn died between close_old_connections and create.
                 # Force-close and retry once with a fresh connection.
                 try:
