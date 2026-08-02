@@ -143,6 +143,22 @@ class WebhookHandler(logging.Handler):
             pass
 
 
+def _resolve_exc_info(exc_info: Any) -> Optional[tuple]:
+    """Zet een exc_info-kwarg om naar de (type, value, traceback) tuple die logging verwacht.
+
+    Accepteert True (pakt de exception die nu wordt afgehandeld), een exception-instantie
+    of een kant-en-klare tuple. Levert None als er geen exception te vinden is, zodat
+    formatters geen 'NoneType: None' in de log zetten.
+    """
+    if not exc_info:
+        return None
+    if isinstance(exc_info, BaseException):
+        return type(exc_info), exc_info, exc_info.__traceback__
+    if not isinstance(exc_info, tuple):
+        exc_info = sys.exc_info()
+    return exc_info if exc_info[0] is not None else None
+
+
 class _LoggerProxy:
     """
     Class-based, importable singleton-like logger facade.
@@ -252,6 +268,11 @@ class _LoggerProxy:
         # First argument is the main message
         message = str(args[0])
 
+        # exc_info hoort op de record zelf, niet bij de extra kwargs: handlers en
+        # formatters lezen record.exc_info om de traceback en de exception-klasse
+        # terug te vinden.
+        exc_info = _resolve_exc_info(kwargs.pop('exc_info', None))
+
         # Create the log record
         record = logger.makeRecord(
             logger.name,
@@ -260,7 +281,7 @@ class _LoggerProxy:
             0,
             message,
             (),
-            None,
+            exc_info,
         )
 
         # Attach extra args and kwargs to the record, preserving dicts/lists
@@ -274,9 +295,7 @@ class _LoggerProxy:
         if kwargs:
             record._extra_kwargs = {}
             for k, v in kwargs.items():
-                if k == 'exc_info' and v:
-                    record._extra_kwargs[k] = traceback.format_exc()
-                elif isinstance(v, (dict, list)):
+                if isinstance(v, (dict, list)):
                     record._extra_kwargs[k] = json.dumps(v, default=str)
                 else:
                     record._extra_kwargs[k] = str(v)

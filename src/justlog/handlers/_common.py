@@ -39,6 +39,8 @@ def build_subject(record: logging.LogRecord, project: str) -> str:
 
 def format_body(record: logging.LogRecord) -> str:
     parts: list[str] = [record.getMessage()]
+    parts.extend(str(arg) for arg in getattr(record, '_extra_args', None) or ())
+    parts.extend(f'{key}: {value}' for key, value in (getattr(record, '_extra_kwargs', None) or {}).items())
     if record.exc_info and record.exc_info[0] is not None:
         parts.append('')
         parts.append('Traceback:')
