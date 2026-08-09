@@ -14,11 +14,32 @@ import traceback
 SUBJECT_PREVIEW_CHARS = 80
 
 
+def fingerprint_key(exc_class: str, top_frame: str, message: str) -> tuple[str, str]:
+    """De twee sleutelvelden van de fingerprint, met de logregel als terugval.
+
+    Zonder exception zijn exc_class en top_frame allebei leeg, waardoor álle
+    exception-loze errors van een project dezelfde fingerprint krijgen. Dat is
+    niet alleen samenvoegen tot één issue: de rate limit in de handlers werkt
+    per fingerprint, dus een tweede soort fout binnen het window wordt helemaal
+    niet verstuurd. Daarom valt de sleutel dan terug op de logregel, net zoals
+    build_subject dat al doet.
+
+    De 'msg:'-prefix voorkomt dat een logregel die toevallig 'ValueError' heet
+    botst met een echte ValueError zonder traceback.
+
+    Deze regel moet gelijk blijven aan janitor.dedup.fingerprint_for_justlog.
+    """
+    if exc_class:
+        return exc_class, top_frame
+    return f'msg:{message}', ''
+
+
 def fingerprint_from_record(record: logging.LogRecord, project: str) -> str:
     """SHA-1 over (project, logger, exception class, normalized top frame)."""
     logger = record.name or ''
     exc_class, top_frame = _exception_signature(record)
-    payload = '\x00'.join([project, logger, exc_class, top_frame]).encode('utf-8')
+    key, frame = fingerprint_key(exc_class, top_frame, record.getMessage())
+    payload = '\x00'.join([project, logger, key, frame]).encode('utf-8')
     return hashlib.sha1(payload).hexdigest()
 
 

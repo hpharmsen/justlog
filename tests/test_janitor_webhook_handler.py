@@ -230,6 +230,62 @@ def test_fingerprint_changes_with_exception_class(opener, clock):
     assert fp1 != fp2
 
 
+def _record_without_exception(message: str, logger_name: str = 'app') -> logging.LogRecord:
+    return logging.LogRecord(
+        name=logger_name, level=logging.ERROR, pathname=__file__, lineno=7,
+        msg=message, args=(), exc_info=None,
+    )
+
+
+def test_fingerprint_without_exception_falls_back_to_message(opener, clock):
+    """Zonder exception mogen verschillende logregels niet op één issue vallen.
+
+    De rate limit werkt per fingerprint, dus een gedeelde fingerprint betekent
+    dat de tweede soort fout binnen het window helemaal niet verstuurd wordt.
+    """
+    handler = _make_handler(opener, clock, rate_limit_window=60.0)
+
+    handler.emit(_record_without_exception('Task permanently failed, skipping'))
+    handler.emit(_record_without_exception('Session failed permanently'))
+
+    assert len(opener.requests) == 2  # tweede is niet weggerate-limit
+    fp1 = _payload_of(opener.requests[0])['headers']['X-Janitor-Fingerprint']
+    fp2 = _payload_of(opener.requests[1])['headers']['X-Janitor-Fingerprint']
+    assert fp1 != fp2
+
+
+def test_fingerprint_without_exception_stable_for_same_message(opener, clock):
+    """Dezelfde logregel blijft wel dedupliceren, anders is de rate limit weg."""
+    handler = _make_handler(opener, clock, rate_limit_window=60.0)
+
+    handler.emit(_record_without_exception('Chat failed after 3 attempts'))
+    handler.emit(_record_without_exception('Chat failed after 3 attempts'))
+
+    assert len(opener.requests) == 1
+
+
+def test_fingerprint_golden_values():
+    """Vastgepind, want janitor.dedup.fingerprint_for_justlog moet exact hetzelfde
+    uitrekenen. Wijkt één van beide af, dan faalt deze test of zijn tegenhanger
+    in tests/unit/test_dedup.py van janitor."""
+    from justlog.handlers._common import fingerprint_from_record
+
+    no_exc = _record_without_exception('Task permanently failed, skipping')
+    assert (fingerprint_from_record(no_exc, project='electudetranslate')
+            == 'a51860d9c1b1d257bbeb0cf96e3c97ae39eb600f')
+
+    other = _record_without_exception('Session failed permanently')
+    assert (fingerprint_from_record(other, project='electudetranslate')
+            == '926dda178e982cfef17255579a4143b9db42da8b')
+
+
+def test_fingerprint_with_exception_is_unchanged_by_the_fallback():
+    """Bestaande issues met een exception mogen niet van fingerprint veranderen."""
+    from justlog.handlers._common import fingerprint_key
+
+    assert fingerprint_key('ValueError', 'views.py:create', 'wat dan ook') == ('ValueError', 'views.py:create')
+
+
 # ---------------------------------------------------------------------------
 # Level filter
 # ---------------------------------------------------------------------------
