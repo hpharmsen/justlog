@@ -1,5 +1,6 @@
+set -e
 start_time=$(date +%s)
-export VERSION=`python bumpversion.py -v patch`
+export VERSION=`uv run python bumpversion.py -v patch`
 git commit -v -a -m "publish `date`"
 git tag -a $VERSION -m "version $VERSION"
 git push origin main
