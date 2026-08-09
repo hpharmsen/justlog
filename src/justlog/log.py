@@ -159,6 +159,29 @@ def _resolve_exc_info(exc_info: Any) -> Optional[tuple]:
     return exc_info if exc_info[0] is not None else None
 
 
+class _ForwardHandler(logging.Handler):
+    """Re-emit records from a third-party logger through the app logger's handlers.
+
+    Libraries log to their own `logging.getLogger(__name__)`, which propagates to
+    root, not to our app logger. Without this they never reach the file, the
+    webhook or Janitor. Handlers are resolved at emit time on purpose, so a
+    handler added after setup_logging (JanitorWebhookHandler, typically) still
+    receives captured records.
+    """
+
+    def __init__(self, target_name: str):
+        super().__init__(level=logging.NOTSET)
+        self._target_name = target_name
+
+    def emit(self, record: logging.LogRecord) -> None:
+        target = logging.getLogger(self._target_name)
+        if record.levelno < target.level:
+            return
+        for handler in target.handlers:
+            if record.levelno >= handler.level:
+                handler.handle(record)
+
+
 class _LoggerProxy:
     """
     Class-based, importable singleton-like logger facade.
@@ -191,6 +214,7 @@ class _LoggerProxy:
         webhook: Optional[str] = None,  # Webhook URL to POST log messages to
         webhook_level: int = logging.ERROR,  # Minimum level for webhook notifications
         app_name: str = '',         # Application name for webhook notifications
+        capture: tuple[str, ...] = (),  # Third-party logger names to route into our handlers
     ) -> logging.Logger:
         """Configure logging and bind the underlying logger to this proxy."""
         # Ensure file/dirs exist
@@ -236,6 +260,18 @@ class _LoggerProxy:
             webhook_handler = WebhookHandler(webhook, app_name=app_name)
             webhook_handler.setLevel(webhook_level)
             logger.addHandler(webhook_handler)
+
+        # Route third-party loggers (e.g. 'justai', 'django.request') into our
+        # handlers. Capturing a parent name covers its children by propagation.
+        for name in capture:
+            if name == logger_name:
+                continue
+            captured = logging.getLogger(name)
+            for existing in [h for h in captured.handlers if isinstance(h, _ForwardHandler)]:
+                captured.removeHandler(existing)
+            captured.addHandler(_ForwardHandler(logger_name))
+            captured.setLevel(level)
+            captured.propagate = False  # our handlers own the output; no duplicates via root
 
         self._logger = logger
 

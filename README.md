@@ -99,6 +99,23 @@ setup_logging(
 | `db_level` | `int` | `logging.INFO` | Minimum level for database logging |
 | `webhook` | `str` | `None` | Webhook URL to POST log messages to |
 | `webhook_level` | `int` | `logging.ERROR` | Minimum level for webhook notifications |
+| `capture` | `tuple[str, ...]` | `()` | Third-party logger names to route into justlog's handlers |
+
+### Capturing third-party loggers
+
+Libraries log to their own `logging.getLogger(__name__)`, which propagates to the
+root logger, not to justlog's. Their errors therefore never reach your log file,
+your webhook, or Janitor. `capture` fixes that:
+
+```python
+setup_logging('logs/app.log', capture=('justai', 'django.request'))
+```
+
+Naming a parent covers its children, so `'justai'` catches
+`justai.models.anthropic_models` too. Handlers are resolved when a record is
+emitted, so a handler you add *after* `setup_logging` (a `JanitorWebhookHandler`,
+typically) still receives captured records. Captured loggers stop propagating to
+root, so you get one copy of each record, not two.
 
 ## Features
 
