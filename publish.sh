@@ -10,4 +10,4 @@ duration=$(($(date +%s) - start_time))
 echo "${GREEN}Published in $duration secs${NC}"
 echo ""
 echo "run:"
-echo "pip install git+https://github.com/hpharmsen/justlog@$VERSION"
+echo "uv add git+https://github.com/hpharmsen/justlog@$VERSION"
