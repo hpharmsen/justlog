@@ -5,8 +5,11 @@ A simple, flexible logging utility for Python with automatic file rotation and m
 ## Installation
 
 ```bash
-pip install justlog
+uv add git+https://github.com/hpharmsen/justlog
 ```
+
+Pin a specific version with `@<tag>`, for example
+`uv add git+https://github.com/hpharmsen/justlog@0.8.11`.
 
 ## Quick Start
 
