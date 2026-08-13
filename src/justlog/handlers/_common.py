@@ -12,10 +12,21 @@ import traceback
 
 
 SUBJECT_PREVIEW_CHARS = 80
+MESSAGE_TEMPLATE_CHARS = 200
+
+
+def message_template(record: logging.LogRecord) -> str:
+    """De logregel zoals hij in de code staat, met de placeholders nog erin.
+
+    Whitespace wordt platgeslagen en de lengte begrensd, zodat de waarde veilig als
+    e-mailheader mee kan. Beide kanten moeten exact deze waarde gebruiken, anders
+    rekent janitor een andere fingerprint uit dan de handler meestuurt.
+    """
+    return ' '.join(str(record.msg).split())[:MESSAGE_TEMPLATE_CHARS]
 
 
 def fingerprint_key(exc_class: str, top_frame: str, message: str) -> tuple[str, str]:
-    """De twee sleutelvelden van de fingerprint, met de logregel als terugval.
+    """De twee sleutelvelden van de fingerprint, met het logtemplate als terugval.
 
     Zonder exception zijn exc_class en top_frame allebei leeg, waardoor álle
     exception-loze errors van een project dezelfde fingerprint krijgen. Dat is
@@ -26,6 +37,10 @@ def fingerprint_key(exc_class: str, top_frame: str, message: str) -> tuple[str, 
 
     De 'msg:'-prefix voorkomt dat een logregel die toevallig 'ValueError' heet
     botst met een echte ValueError zonder traceback.
+
+    `message` is het template, niet de ingevulde regel: dezelfde foutsoort met een
+    andere waarde erin is één issue. Zou de ingevulde regel de sleutel zijn, dan
+    opent één vastgelopen spool tientallen issues zonder rate limiting.
 
     Deze regel moet gelijk blijven aan janitor.dedup.fingerprint_for_justlog.
     """
@@ -38,7 +53,7 @@ def fingerprint_from_record(record: logging.LogRecord, project: str) -> str:
     """SHA-1 over (project, logger, exception class, normalized top frame)."""
     logger = record.name or ''
     exc_class, top_frame = _exception_signature(record)
-    key, frame = fingerprint_key(exc_class, top_frame, record.getMessage())
+    key, frame = fingerprint_key(exc_class, top_frame, message_template(record))
     payload = '\x00'.join([project, logger, key, frame]).encode('utf-8')
     return hashlib.sha1(payload).hexdigest()
 

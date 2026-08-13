@@ -279,6 +279,59 @@ def test_fingerprint_golden_values():
             == '926dda178e982cfef17255579a4143b9db42da8b')
 
 
+def _record_with_args(template: str, *args, logger_name: str = 'app') -> logging.LogRecord:
+    return logging.LogRecord(
+        name=logger_name, level=logging.ERROR, pathname=__file__, lineno=8,
+        msg=template, args=args, exc_info=None,
+    )
+
+
+def test_fingerprint_uses_the_template_not_the_interpolated_message(opener, clock):
+    """Dezelfde foutregel met een andere waarde erin is één issue.
+
+    Anders opent één vastgelopen spool tientallen issues, want de rate limit
+    werkt per fingerprint.
+    """
+    handler = _make_handler(opener, clock, rate_limit_window=60.0)
+
+    handler.emit(_record_with_args('Spool entry %s stuck', '2026-08-11-101500.json'))
+    handler.emit(_record_with_args('Spool entry %s stuck', '2026-08-11-101600.json'))
+
+    assert len(opener.requests) == 1, 'tweede regel had dezelfde fingerprint moeten krijgen'
+
+
+def test_fingerprint_still_differs_for_different_templates(opener, clock):
+    handler = _make_handler(opener, clock, rate_limit_window=60.0)
+
+    handler.emit(_record_with_args('Spool entry %s stuck', 'a.json'))
+    handler.emit(_record_with_args('OCR failed for %s', 'a.json'))
+
+    assert len(opener.requests) == 2
+    fp1 = _payload_of(opener.requests[0])['headers']['X-Janitor-Fingerprint']
+    fp2 = _payload_of(opener.requests[1])['headers']['X-Janitor-Fingerprint']
+    assert fp1 != fp2
+
+
+def test_payload_carries_the_template_next_to_the_message(opener, clock):
+    """Janitor rekent de fingerprint zelf na en heeft daarvoor het template nodig."""
+    handler = _make_handler(opener, clock)
+    handler.emit(_record_with_args('Spool entry %s stuck', 'a.json'))
+
+    payload = _payload_of(opener.requests[0])
+    assert payload['headers']['X-Janitor-Message-Template'] == 'Spool entry %s stuck'
+    assert payload['body'].startswith('Spool entry a.json stuck')
+
+
+def test_template_header_is_header_safe(opener, clock):
+    """Een template met newlines mag geen header injection worden."""
+    handler = _make_handler(opener, clock)
+    handler.emit(_record_with_args('Regel een\nRegel twee %s', 'x'))
+
+    template = _payload_of(opener.requests[0])['headers']['X-Janitor-Message-Template']
+    assert '\n' not in template
+    assert template == 'Regel een Regel twee %s'
+
+
 def test_fingerprint_with_exception_is_unchanged_by_the_fallback():
     """Bestaande issues met een exception mogen niet van fingerprint veranderen."""
     from justlog.handlers._common import fingerprint_key

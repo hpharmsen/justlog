@@ -18,7 +18,7 @@ import time
 import urllib.request
 from typing import Callable, Optional
 
-from ._common import build_subject, fingerprint_from_record, format_body
+from ._common import build_subject, fingerprint_from_record, format_body, message_template
 
 
 DEFAULT_URL = 'https://www.harmsen.nl/emailme/'
@@ -81,6 +81,7 @@ class JanitorWebhookHandler(logging.Handler):
                 'X-Janitor-Level': record.levelname,
                 'X-Janitor-Logger': record.name,
                 'X-Janitor-Fingerprint': fingerprint,
+                'X-Janitor-Message-Template': message_template(record),
             },
         }
 

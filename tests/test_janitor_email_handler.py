@@ -347,6 +347,20 @@ def test_rate_limit_is_per_fingerprint(smtp_log, clock):
     assert len(instances) == 2
 
 
+def test_email_carries_the_template_header(smtp_log, clock):
+    """De mailkant moet hetzelfde template meesturen als de webhookkant."""
+    instances, factory = smtp_log
+    handler = _make_handler(factory, clock)
+    record = logging.LogRecord(
+        name='app', level=logging.ERROR, pathname=__file__, lineno=9,
+        msg='Spool entry %s stuck', args=('a.json',), exc_info=None,
+    )
+    handler.emit(record)
+
+    sent = instances[0].sent[0][2]
+    assert 'X-Janitor-Message-Template: Spool entry %s stuck' in sent
+
+
 # ---------------------------------------------------------------------------
 # SMTP failure must not crash the host process
 # ---------------------------------------------------------------------------

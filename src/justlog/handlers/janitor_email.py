@@ -18,6 +18,7 @@ from ._common import (
     build_subject,
     fingerprint_from_record,
     format_body,
+    message_template,
 )
 
 # Backward-compat re-exports (tests reach for the underscore names).
@@ -87,6 +88,7 @@ class JanitorEmailHandler(logging.Handler):
         msg['X-Janitor-Level'] = record.levelname
         msg['X-Janitor-Logger'] = record.name
         msg['X-Janitor-Fingerprint'] = fingerprint
+        msg['X-Janitor-Message-Template'] = message_template(record)
         msg.set_content(format_body(record))
         return msg
 
