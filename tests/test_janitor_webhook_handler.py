@@ -332,6 +332,22 @@ def test_template_header_is_header_safe(opener, clock):
     assert template == 'Regel een Regel twee %s'
 
 
+def test_fingerprint_matches_janitor_for_the_same_record(opener, clock):
+    """Eén record, één fingerprint, aan beide kanten van de webhook.
+
+    Janitor rekent hem na uit de mail die deze handler stuurt. De tegenhanger
+    staat in janitor tests/unit/test_parser.py::
+    test_compute_fingerprint_matches_justlog_for_the_same_record. Loopt één van
+    beide kanten weg, dan faalt deze test of die.
+    """
+    handler = _make_handler(opener, clock, project='lifewiki')
+    handler.emit(_record_with_args('Spool entry %s stuck', '2026-08-11-101500.json'))
+
+    payload = _payload_of(opener.requests[0])
+    assert payload['headers']['X-Janitor-Fingerprint'] == '203069c0148e11715f2d82a4514c25ffc1c468bc'
+    assert payload['headers']['X-Janitor-Message-Template'] == 'Spool entry %s stuck'
+
+
 def test_fingerprint_with_exception_is_unchanged_by_the_fallback():
     """Bestaande issues met een exception mogen niet van fingerprint veranderen."""
     from justlog.handlers._common import fingerprint_key
