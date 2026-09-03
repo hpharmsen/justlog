@@ -1,4 +1,6 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / 'src'))
+sys.path.insert(0, str(HERE))  # tracebacks.py, de traceback-fixtures
