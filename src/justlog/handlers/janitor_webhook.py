@@ -18,7 +18,13 @@ import time
 import urllib.request
 from typing import Callable, Optional
 
-from ._common import build_subject, fingerprint_from_record, format_body, message_template
+from ._common import (
+    RateLimiter,
+    build_subject,
+    fingerprint_from_record,
+    format_body,
+    message_template,
+)
 
 
 DEFAULT_URL = 'https://www.harmsen.nl/emailme/'
@@ -48,26 +54,21 @@ class JanitorWebhookHandler(logging.Handler):
         self.request_timeout = request_timeout
         self._opener = opener or urllib.request.urlopen
         self._clock = clock or time.monotonic
-        self._last_sent: dict[str, float] = {}
+        self._rate_limiter = RateLimiter(rate_limit_window, self._clock)
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
             if record.levelno < self.level:
                 return
             fingerprint = fingerprint_from_record(record, self.project)
-            if self._is_rate_limited(fingerprint):
+            if self._rate_limiter.is_limited(fingerprint):
                 return
             payload = self._build_payload(record, fingerprint)
             self._post(payload)
-            self._last_sent[fingerprint] = self._clock()
+            self._rate_limiter.record(fingerprint)
         except Exception as exc:  # transport or build failure — never crash the host
             print(f'JanitorWebhookHandler: {exc}', file=sys.stderr)
 
-    def _is_rate_limited(self, fingerprint: str) -> bool:
-        last = self._last_sent.get(fingerprint)
-        if last is None:
-            return False
-        return (self._clock() - last) < self.rate_limit_window
 
     def _build_payload(self, record: logging.LogRecord, fingerprint: str) -> dict:
         return {

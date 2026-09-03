@@ -16,6 +16,7 @@ import urllib.request
 
 import pytest
 
+from justlog.handlers._common import RateLimiter
 from justlog.handlers.janitor_webhook import JanitorWebhookHandler
 
 
@@ -265,18 +266,25 @@ def test_fingerprint_without_exception_stable_for_same_message(opener, clock):
 
 
 def test_fingerprint_golden_values():
-    """Vastgepind, want janitor.dedup.fingerprint_for_justlog moet exact hetzelfde
-    uitrekenen. Wijkt één van beide af, dan faalt deze test of zijn tegenhanger
-    in tests/unit/test_dedup.py van janitor."""
+    """Vastgepind, zodat een wijziging aan de sleutel zichtbaar wordt.
+
+    Elke wijziging hier maakt alle bestaande fingerprints ongeldig: lopende
+    previous_issue-ketens breken en openstaande issues worden zombies waarvan de
+    teller niet meer oploopt. Die kosten zijn te dragen, maar niet per ongeluk.
+
+    Deze waarden zijn niet meer de tegenhanger van iets in janitor. Janitor
+    leest de fingerprint-header en rekent niets na, dus deze module is de enige
+    plek waar de sleutel ontstaat.
+    """
     from justlog.handlers._common import fingerprint_from_record
 
     no_exc = _record_without_exception('Task permanently failed, skipping')
     assert (fingerprint_from_record(no_exc, project='electudetranslate')
-            == 'a51860d9c1b1d257bbeb0cf96e3c97ae39eb600f')
+            == '3980cc94f4a58923a0a0948857ccc689aae9c201')
 
     other = _record_without_exception('Session failed permanently')
     assert (fingerprint_from_record(other, project='electudetranslate')
-            == '926dda178e982cfef17255579a4143b9db42da8b')
+            == '2bbd70768692044d816651fdf7ab9558df1db7fb')
 
 
 def _record_with_args(template: str, *args, logger_name: str = 'app') -> logging.LogRecord:
@@ -330,22 +338,6 @@ def test_template_header_is_header_safe(opener, clock):
     template = _payload_of(opener.requests[0])['headers']['X-Janitor-Message-Template']
     assert '\n' not in template
     assert template == 'Regel een Regel twee %s'
-
-
-def test_fingerprint_matches_janitor_for_the_same_record(opener, clock):
-    """Eén record, één fingerprint, aan beide kanten van de webhook.
-
-    Janitor rekent hem na uit de mail die deze handler stuurt. De tegenhanger
-    staat in janitor tests/unit/test_parser.py::
-    test_compute_fingerprint_matches_justlog_for_the_same_record. Loopt één van
-    beide kanten weg, dan faalt deze test of die.
-    """
-    handler = _make_handler(opener, clock, project='lifewiki')
-    handler.emit(_record_with_args('Spool entry %s stuck', '2026-08-11-101500.json'))
-
-    payload = _payload_of(opener.requests[0])
-    assert payload['headers']['X-Janitor-Fingerprint'] == '203069c0148e11715f2d82a4514c25ffc1c468bc'
-    assert payload['headers']['X-Janitor-Message-Template'] == 'Spool entry %s stuck'
 
 
 def test_fingerprint_with_exception_is_unchanged_by_the_fallback():
@@ -440,7 +432,7 @@ def test_rate_limit_map_stays_bounded(opener, clock):
         handler.emit(_record_without_exception(f'unieke fout nummer {i} met eigen tekst'))
         clock.advance(0.001)
 
-    assert len(handler._last_sent) < 1000
+    assert len(handler._rate_limiter._last_sent) <= RateLimiter.MAX_ENTRIES
 
 
 # ---------------------------------------------------------------------------

@@ -190,10 +190,17 @@ def test_fingerprint_matches_sha1_of_project_logger_exc_frame(smtp_log, clock):
     handler.emit(record)
     msg = _parse_sent(instances[0].sent[0])
 
-    # The recorded record was created inside _record_with_exception, so the
-    # innermost frame is in this test file under that helper.
-    expected_frame = f'{"test_janitor_email_handler.py"}:_record_with_exception'
-    expected_payload = '\x00'.join(['website', 'app', 'ZeroDivisionError', expected_frame]).encode('utf-8')
+    # Het record ontstaat in _record_with_exception in dit testbestand, en dat
+    # is geen library-frame, dus het diepste eigen frame is dat frame zelf. Het
+    # label draagt twee padsegmenten, zodat gelijknamige bestanden in
+    # verschillende packages niet botsen.
+    expected_frame = 'tests/test_janitor_email_handler.py:_record_with_exception'
+    # Vijf velden, niet vier: de genormaliseerde exception-boodschap staat er
+    # als apart veld naast. Zonder dat veld delen twee verschillende fouten uit
+    # hetzelfde frame één fingerprint.
+    expected_payload = '\x00'.join(
+        ['website', 'app', 'ZeroDivisionError', expected_frame, 'division by zero'],
+    ).encode('utf-8')
     expected = hashlib.sha1(expected_payload).hexdigest()
     assert msg['X-Janitor-Fingerprint'] == expected
 

@@ -48,7 +48,7 @@ def test_exc_info_true_reaches_the_record(janitor):
         lg.error('reply generation failed', exc_info=True)
 
     payload = janitor.payloads[0]
-    assert payload['subject'] == '[ERROR] website: ValueError in test_lg_janitor_integration.py:_raise_value_error'
+    assert payload['subject'] == '[ERROR] website: ValueError in tests/test_lg_janitor_integration.py:_raise_value_error'
     assert 'Traceback:' in payload['body']
     assert 'ValueError: kapot' in payload['body']
 
