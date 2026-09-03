@@ -427,6 +427,22 @@ def test_rate_limit_is_per_fingerprint(opener, clock):
     assert len(opener.requests) == 2
 
 
+def test_rate_limit_map_stays_bounded(opener, clock):
+    """`_last_sent` groeit niet mee met het aantal verschillende boodschappen.
+
+    De sleutelruimte was begrensd door (exception-klasse x frame) en dus klein.
+    Met de boodschap in de sleutel is hij zo groot als het aantal verschillende
+    genormaliseerde boodschappen, en de dict verwijderde nooit iets.
+    """
+    handler = _make_handler(opener, clock, rate_limit_window=60.0)
+
+    for i in range(5000):
+        handler.emit(_record_without_exception(f'unieke fout nummer {i} met eigen tekst'))
+        clock.advance(0.001)
+
+    assert len(handler._last_sent) < 1000
+
+
 # ---------------------------------------------------------------------------
 # Transport failure must not crash the host process
 # ---------------------------------------------------------------------------
