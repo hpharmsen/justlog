@@ -4,5 +4,5 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "justlog"
-version = "0.8.13"
+version = "0.9.0"
 source = { editable = "." }
